@@ -1,0 +1,26 @@
+# Shadow Environment Bundle
+# Provides shadow environment capabilities for testing Amplifier changes
+name: shadow
+version: "0.1.0"
+description: Shadow environments for safely testing Amplifier ecosystem changes
+
+# Tools provided by this bundle
+tools:
+  - module: tool-shadow
+    config:
+      # Default configuration for the shadow tool
+      default_mode: auto
+      network_enabled: true
+
+# Agents provided by this bundle
+agents:
+  shadow-operator:
+    description: |
+      Agent specialized in managing shadow environments for testing.
+      Use this agent when you need to test changes in an isolated environment.
+    instructions: shadow:agents/shadow-operator.md
+
+# Context files
+context:
+  include:
+    - shadow:context/shadow-instructions.md
