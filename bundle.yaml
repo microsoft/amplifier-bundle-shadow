@@ -1,0 +1,10 @@
+# Shadow Environment Bundle - Root Entry Point
+# This file provides the root bundle entry point that includes the actual bundle
+
+bundle:
+  name: shadow
+  version: 0.1.0
+  description: Shadow environments for safely testing Amplifier ecosystem changes
+
+includes:
+  - bundle: shadow:bundles/shadow.yaml
