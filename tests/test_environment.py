@@ -13,33 +13,31 @@ class TestShadowEnvironment:
     """Tests for ShadowEnvironment."""
     
     @pytest.fixture
-    def mock_backend(self):
-        """Create a mock sandbox backend."""
-        backend = MagicMock()
-        backend.name = "MockBackend"
-        backend.get_default_env.return_value = {
-            "HOME": "/home/shadow",
-            "SHADOW_ENV_ID": "test-123",
-        }
-        return backend
+    def mock_runtime(self):
+        """Create a mock container runtime."""
+        runtime = MagicMock()
+        runtime.exec = AsyncMock(return_value=(0, "output", ""))
+        runtime.is_running = AsyncMock(return_value=True)
+        runtime.exec_interactive = AsyncMock()
+        return runtime
     
     @pytest.fixture
     def temp_shadow_dir(self, tmp_path):
         """Create a temporary shadow directory with structure."""
         shadow_dir = tmp_path / "shadow-test"
         (shadow_dir / "workspace").mkdir(parents=True)
-        (shadow_dir / "home").mkdir()
-        (shadow_dir / "repos" / "microsoft").mkdir(parents=True)
+        (shadow_dir / "snapshots" / "microsoft").mkdir(parents=True)
         return shadow_dir
     
     @pytest.fixture
-    def environment(self, temp_shadow_dir, mock_backend):
+    def environment(self, temp_shadow_dir, mock_runtime):
         """Create a ShadowEnvironment for testing."""
         return ShadowEnvironment(
             shadow_id="test-123",
+            container_name="shadow-test-123",
             repos=[RepoSpec(org="microsoft", name="amplifier")],
             shadow_dir=temp_shadow_dir,
-            backend=mock_backend,
+            runtime=mock_runtime,
             created_at=datetime.now(),
         )
     
@@ -47,34 +45,36 @@ class TestShadowEnvironment:
         """Test workspace_dir property."""
         assert environment.workspace_dir == temp_shadow_dir / "workspace"
     
-    def test_home_dir(self, environment, temp_shadow_dir):
-        """Test home_dir property."""
-        assert environment.home_dir == temp_shadow_dir / "home"
-    
-    def test_repos_dir(self, environment, temp_shadow_dir):
-        """Test repos_dir property."""
-        assert environment.repos_dir == temp_shadow_dir / "repos"
+    def test_snapshots_dir(self, environment, temp_shadow_dir):
+        """Test snapshots_dir property."""
+        assert environment.snapshots_dir == temp_shadow_dir / "snapshots"
     
     def test_to_info(self, environment):
         """Test to_info returns correct data."""
         info = environment.to_info()
         
         assert info.shadow_id == "test-123"
-        assert info.mode == "MockBackend"
+        assert info.mode == "container"
         assert info.status == "ready"
         assert "microsoft/amplifier" in info.repos
     
     @pytest.mark.asyncio
-    async def test_exec_calls_backend(self, environment, mock_backend):
-        """Test exec delegates to backend."""
-        mock_backend.exec = AsyncMock(return_value=MagicMock(
-            exit_code=0, stdout="output", stderr=""
-        ))
-        
+    async def test_exec_calls_runtime(self, environment, mock_runtime):
+        """Test exec delegates to runtime."""
         result = await environment.exec("echo test")
         
-        mock_backend.exec.assert_called_once()
-        assert "echo test" in str(mock_backend.exec.call_args)
+        mock_runtime.exec.assert_called_once()
+        call_args = mock_runtime.exec.call_args
+        assert call_args.kwargs["container"] == "shadow-test-123"
+        assert call_args.kwargs["command"] == "echo test"
+    
+    @pytest.mark.asyncio
+    async def test_is_running_delegates(self, environment, mock_runtime):
+        """Test is_running delegates to runtime."""
+        result = await environment.is_running()
+        
+        mock_runtime.is_running.assert_called_once_with("shadow-test-123")
+        assert result is True
     
     def test_snapshot_baseline(self, environment):
         """Test snapshot_baseline records file hashes."""
@@ -135,7 +135,7 @@ class TestShadowEnvironment:
         assert changes[0].change_type == "deleted"
     
     def test_extract_file(self, environment, tmp_path):
-        """Test extract copies file from sandbox to host."""
+        """Test extract copies file from container workspace to host."""
         # Create file in workspace
         (environment.workspace_dir / "source.txt").write_text("test content")
         
@@ -152,12 +152,12 @@ class TestShadowEnvironment:
             environment.extract("/workspace/nonexistent.txt", str(tmp_path / "dest.txt"))
     
     def test_extract_invalid_path(self, environment, tmp_path):
-        """Test extract raises for invalid sandbox path."""
+        """Test extract raises for invalid container path."""
         with pytest.raises(ValueError):
             environment.extract("/invalid/path.txt", str(tmp_path / "dest.txt"))
     
     def test_inject_file(self, environment, tmp_path):
-        """Test inject copies file from host to sandbox."""
+        """Test inject copies file from host to container workspace."""
         source = tmp_path / "source.txt"
         source.write_text("injected content")
         
@@ -173,7 +173,7 @@ class TestShadowEnvironment:
             environment.inject(str(tmp_path / "nonexistent.txt"), "/workspace/dest.txt")
     
     def test_inject_invalid_path(self, environment, tmp_path):
-        """Test inject raises for invalid sandbox path."""
+        """Test inject raises for invalid container path."""
         source = tmp_path / "source.txt"
         source.write_text("content")
         

@@ -27,12 +27,6 @@ class TestCLI:
         assert result.exit_code == 0
         assert "Shadow environments" in result.output
     
-    def test_backends(self, runner):
-        """Test backends command."""
-        result = runner.invoke(main, ["backends"])
-        assert result.exit_code == 0
-        # Output depends on system, just check it doesn't crash
-    
     def test_list_empty(self, runner, tmp_path):
         """Test list command with no environments."""
         result = runner.invoke(main, [
@@ -51,14 +45,15 @@ class TestCLI:
         assert result.exit_code == 1
         assert "not found" in result.output
     
-    def test_destroy_not_found(self, runner, tmp_path):
-        """Test destroy command with nonexistent environment."""
+    def test_destroy_nonexistent(self, runner, tmp_path):
+        """Test destroy command with nonexistent environment succeeds (idempotent)."""
         result = runner.invoke(main, [
             "--shadow-home", str(tmp_path / ".shadow"),
             "destroy", "nonexistent", "--force"
         ])
-        assert result.exit_code == 1
-        assert "not found" in result.output
+        # Destroy is idempotent - succeeds even if env doesn't exist
+        assert result.exit_code == 0
+        assert "Destroyed" in result.output
     
     def test_destroy_all_empty(self, runner, tmp_path):
         """Test destroy-all command with no environments."""
@@ -111,4 +106,4 @@ class TestCLI:
         assert result.exit_code == 0
         assert "Create a new shadow environment" in result.output
         assert "--name" in result.output
-        assert "--mode" in result.output
+        assert "--image" in result.output  # Container image option (replaces --mode)

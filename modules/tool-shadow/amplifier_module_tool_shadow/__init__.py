@@ -15,7 +15,7 @@ from typing import Any
 from amplifier_core import ToolResult
 
 from amplifier_bundle_shadow import ShadowManager
-from amplifier_bundle_shadow.models import RepoSpec
+from amplifier_bundle_shadow.manager import DEFAULT_IMAGE
 
 
 class ShadowTool:
@@ -53,20 +53,15 @@ class ShadowTool:
                 "local_sources": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Local source mappings for create: '/path/to/repo:org/name'. These repos will be snapshotted (including uncommitted changes) and used instead of fetching from GitHub.",
+                    "description": "Local source mappings for create: '/path/to/repo:org/name'. These repos will be snapshotted (including uncommitted changes) and served via local Gitea instead of fetching from GitHub.",
                 },
                 "name": {
                     "type": "string",
                     "description": "Optional name for the environment (create operation)",
                 },
-                "mode": {
+                "image": {
                     "type": "string",
-                    "enum": ["auto", "bubblewrap", "seatbelt", "direct"],
-                    "description": "Sandbox mode (default: auto)",
-                },
-                "network_enabled": {
-                    "type": "boolean",
-                    "description": "Whether to allow network access (default: true)",
+                    "description": f"Container image to use (default: {DEFAULT_IMAGE})",
                 },
                 "shadow_id": {
                     "type": "string",
@@ -84,9 +79,9 @@ class ShadowTool:
                     "type": "string",
                     "description": "Path filter for diff operation",
                 },
-                "sandbox_path": {
+                "container_path": {
                     "type": "string",
-                    "description": "Path inside sandbox (for extract/inject)",
+                    "description": "Path inside container (for extract/inject), e.g., /workspace/file.py",
                 },
                 "host_path": {
                     "type": "string",
@@ -130,8 +125,7 @@ class ShadowTool:
         """Create a new shadow environment with local source overrides."""
         local_sources = input.get("local_sources")
         name = input.get("name")
-        mode = input.get("mode", "auto")
-        network_enabled = input.get("network_enabled", True)
+        image = input.get("image", DEFAULT_IMAGE)
 
         if not local_sources:
             return ToolResult(
@@ -142,16 +136,15 @@ class ShadowTool:
         env = await self.manager.create(
             local_sources=local_sources,
             name=name,
-            mode=mode,
-            network_enabled=network_enabled,
+            image=image,
         )
 
         return ToolResult(
             output={
                 "shadow_id": env.shadow_id,
-                "mode": env.backend.name,
+                "mode": "container",
                 "local_sources": [
-                    {"repo": r.full_name, "local_path": str(r.local_path)}
+                    {"repo": r.full_name, "local_path": str(r.local_path) if r.local_path else None}
                     for r in env.repos
                 ],
                 "status": env.status.value,
@@ -174,6 +167,13 @@ class ShadowTool:
         if not env:
             return ToolResult(output=None, error={"message": f"Shadow environment not found: {shadow_id}"})
 
+        # Check if container is running
+        if not await env.is_running():
+            return ToolResult(
+                output=None,
+                error={"message": f"Container not running for shadow environment: {shadow_id}. Try recreating it."},
+            )
+
         result = await env.exec(command, timeout=timeout)
 
         return ToolResult(
@@ -182,7 +182,7 @@ class ShadowTool:
                 "stdout": result.stdout,
                 "stderr": result.stderr,
             },
-            error=None if result.success else {"message": f"Command failed with exit code {result.exit_code}"},
+            error=None if result.exit_code == 0 else {"message": f"Command failed with exit code {result.exit_code}"},
         )
 
     async def _diff(self, input: dict[str, Any]) -> ToolResult:
@@ -216,13 +216,13 @@ class ShadowTool:
     async def _extract(self, input: dict[str, Any]) -> ToolResult:
         """Extract a file from a shadow environment."""
         shadow_id = input.get("shadow_id")
-        sandbox_path = input.get("sandbox_path")
+        container_path = input.get("container_path") or input.get("sandbox_path")  # backward compat
         host_path = input.get("host_path")
 
         if not shadow_id:
             return ToolResult(output=None, error={"message": "shadow_id is required"})
-        if not sandbox_path:
-            return ToolResult(output=None, error={"message": "sandbox_path is required"})
+        if not container_path:
+            return ToolResult(output=None, error={"message": "container_path is required"})
         if not host_path:
             return ToolResult(output=None, error={"message": "host_path is required"})
 
@@ -230,7 +230,7 @@ class ShadowTool:
         if not env:
             return ToolResult(output=None, error={"message": f"Shadow environment not found: {shadow_id}"})
 
-        bytes_copied = env.extract(sandbox_path, host_path)
+        bytes_copied = env.extract(container_path, host_path)
 
         return ToolResult(
             output={
@@ -244,23 +244,23 @@ class ShadowTool:
         """Inject a file into a shadow environment."""
         shadow_id = input.get("shadow_id")
         host_path = input.get("host_path")
-        sandbox_path = input.get("sandbox_path")
+        container_path = input.get("container_path") or input.get("sandbox_path")  # backward compat
 
         if not shadow_id:
             return ToolResult(output=None, error={"message": "shadow_id is required"})
         if not host_path:
             return ToolResult(output=None, error={"message": "host_path is required"})
-        if not sandbox_path:
-            return ToolResult(output=None, error={"message": "sandbox_path is required"})
+        if not container_path:
+            return ToolResult(output=None, error={"message": "container_path is required"})
 
         env = self.manager.get(shadow_id)
         if not env:
             return ToolResult(output=None, error={"message": f"Shadow environment not found: {shadow_id}"})
 
-        env.inject(host_path, sandbox_path)
+        env.inject(host_path, container_path)
 
         return ToolResult(
-            output={"sandbox_path": sandbox_path},
+            output={"container_path": container_path},
             error=None,
         )
 
@@ -286,8 +286,14 @@ class ShadowTool:
         if not env:
             return ToolResult(output=None, error={"message": f"Shadow environment not found: {shadow_id}"})
 
+        info = env.to_info()
+        is_running = await env.is_running()
+
         return ToolResult(
-            output=env.to_info().to_dict(),
+            output={
+                **info.to_dict(),
+                "running": is_running,
+            },
             error=None,
         )
 
@@ -300,7 +306,7 @@ class ShadowTool:
             return ToolResult(output=None, error={"message": "shadow_id is required"})
 
         try:
-            self.manager.destroy(shadow_id, force=force)
+            await self.manager.destroy(shadow_id, force=force)
             return ToolResult(
                 output={"shadow_id": shadow_id, "destroyed": True},
                 error=None,

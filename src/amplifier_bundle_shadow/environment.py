@@ -12,7 +12,9 @@ from typing import TYPE_CHECKING
 from .models import ChangedFile, ExecResult, RepoSpec, ShadowInfo, ShadowStatus
 
 if TYPE_CHECKING:
-    from .sandbox.base import SandboxBackend
+    from .container import ContainerRuntime
+
+__all__ = ["ShadowEnvironment"]
 
 
 @dataclass
@@ -20,43 +22,34 @@ class ShadowEnvironment:
     """
     Represents an active shadow environment.
     
-    A shadow environment provides an isolated space for testing Amplifier
-    ecosystem changes. It includes:
-    - Local source snapshots with selective git URL rewriting
-    - An isolated workspace directory
-    - An isolated home directory with fresh AMPLIFIER_HOME
+    A shadow environment runs in a container with:
+    - Gitea server for local git hosting
+    - Git URL rewriting to redirect GitHub to local Gitea
+    - Isolated workspace directory
     """
     
     shadow_id: str
+    container_name: str
     repos: list[RepoSpec]
     shadow_dir: Path
-    backend: "SandboxBackend"
+    runtime: "ContainerRuntime"
     created_at: datetime
     status: ShadowStatus = ShadowStatus.READY
     _baseline_hashes: dict[str, str] = field(default_factory=dict)
     
     @property
     def workspace_dir(self) -> Path:
-        """Directory for workspace files inside the sandbox."""
+        """Host path to workspace directory (mounted in container)."""
         return self.shadow_dir / "workspace"
     
     @property
-    def home_dir(self) -> Path:
-        """Home directory inside the sandbox."""
-        return self.shadow_dir / "home"
-    
-    @property
-    def repos_dir(self) -> Path:
-        """Directory containing local source snapshots as bare git repos."""
-        return self.shadow_dir / "repos"
-    
-    def _get_env(self) -> dict[str, str]:
-        """Get environment variables for sandbox execution."""
-        return self.backend.get_default_env(self.shadow_id)
+    def snapshots_dir(self) -> Path:
+        """Host path to snapshots directory."""
+        return self.shadow_dir / "snapshots"
     
     async def exec(self, command: str, timeout: int = 300) -> ExecResult:
         """
-        Execute a command inside the sandbox.
+        Execute a command inside the container.
         
         Args:
             command: Shell command to execute
@@ -65,23 +58,34 @@ class ShadowEnvironment:
         Returns:
             ExecResult with exit code, stdout, and stderr
         """
-        return await self.backend.exec(
+        exit_code, stdout, stderr = await self.runtime.exec(
+            container=self.container_name,
             command=command,
-            env=self._get_env(),
-            cwd="/workspace",
             timeout=timeout,
+            workdir="/workspace",
+        )
+        
+        return ExecResult(
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
         )
     
     async def shell(self) -> None:
         """
-        Open an interactive shell inside the sandbox.
+        Open an interactive shell inside the container.
         
-        This replaces the current process with the sandboxed shell.
+        This replaces the current process with the container shell.
         """
-        await self.backend.shell(
-            env=self._get_env(),
-            cwd="/workspace",
+        await self.runtime.exec_interactive(
+            container=self.container_name,
+            shell="bash",
+            workdir="/workspace",
         )
+    
+    async def is_running(self) -> bool:
+        """Check if the shadow container is running."""
+        return await self.runtime.is_running(self.container_name)
     
     def snapshot_baseline(self) -> None:
         """
@@ -101,7 +105,6 @@ class ShadowEnvironment:
         hasher = hashlib.md5()
         try:
             with open(path, "rb") as f:
-                # Read in chunks for large files
                 for chunk in iter(lambda: f.read(8192), b""):
                     hasher.update(chunk)
             return hasher.hexdigest()
@@ -166,59 +169,54 @@ class ShadowEnvironment:
         
         return changed
     
-    def extract(self, sandbox_path: str, host_path: str) -> int:
+    def extract(self, container_path: str, host_path: str) -> int:
         """
-        Extract a file from the sandbox to the host.
+        Extract a file from the container workspace to the host.
         
         Args:
-            sandbox_path: Path inside the sandbox (e.g., /workspace/file.py)
+            container_path: Path inside container (e.g., /workspace/file.py)
             host_path: Destination path on the host
             
         Returns:
             Number of bytes copied
         """
-        # Map sandbox path to actual path
-        if sandbox_path.startswith("/workspace"):
-            source = self.workspace_dir / sandbox_path[len("/workspace/"):]
-        elif sandbox_path.startswith("/home/shadow"):
-            source = self.home_dir / sandbox_path[len("/home/shadow/"):]
+        # Map container path to host path
+        if container_path.startswith("/workspace"):
+            source = self.workspace_dir / container_path[len("/workspace/"):]
         else:
-            raise ValueError(f"Cannot extract from path: {sandbox_path}")
+            raise ValueError(f"Can only extract from /workspace: {container_path}")
         
         if not source.exists():
-            raise FileNotFoundError(f"File not found in sandbox: {sandbox_path}")
+            raise FileNotFoundError(f"File not found: {container_path}")
         
         dest = Path(host_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
         
         if source.is_dir():
             shutil.copytree(source, dest, dirs_exist_ok=True)
-            # Return approximate size
             total = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file())
             return total
         else:
             shutil.copy2(source, dest)
             return dest.stat().st_size
     
-    def inject(self, host_path: str, sandbox_path: str) -> None:
+    def inject(self, host_path: str, container_path: str) -> None:
         """
-        Copy a file from the host into the sandbox.
+        Copy a file from the host into the container workspace.
         
         Args:
             host_path: Source path on the host
-            sandbox_path: Destination path inside the sandbox
+            container_path: Destination path inside container
         """
         source = Path(host_path)
         if not source.exists():
-            raise FileNotFoundError(f"File not found on host: {host_path}")
+            raise FileNotFoundError(f"File not found: {host_path}")
         
-        # Map sandbox path to actual path
-        if sandbox_path.startswith("/workspace"):
-            dest = self.workspace_dir / sandbox_path[len("/workspace/"):]
-        elif sandbox_path.startswith("/home/shadow"):
-            dest = self.home_dir / sandbox_path[len("/home/shadow/"):]
+        # Map container path to host path
+        if container_path.startswith("/workspace"):
+            dest = self.workspace_dir / container_path[len("/workspace/"):]
         else:
-            raise ValueError(f"Cannot inject to path: {sandbox_path}")
+            raise ValueError(f"Can only inject to /workspace: {container_path}")
         
         dest.parent.mkdir(parents=True, exist_ok=True)
         
@@ -232,7 +230,7 @@ class ShadowEnvironment:
         return ShadowInfo(
             shadow_id=self.shadow_id,
             repos=[r.display_name for r in self.repos],
-            mode=self.backend.name,
+            mode="container",
             status=self.status.value,
             created_at=self.created_at.isoformat(),
             shadow_dir=str(self.shadow_dir),

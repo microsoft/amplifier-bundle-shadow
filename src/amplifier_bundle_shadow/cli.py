@@ -11,8 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import __version__
-from .manager import ShadowManager
-from .sandbox import get_available_backends
+from .manager import ShadowManager, DEFAULT_IMAGE
 
 console = Console()
 error_console = Console(stderr=True)
@@ -36,8 +35,9 @@ def main(ctx: click.Context, shadow_home: Path | None) -> None:
     """
     Shadow environments for safely testing Amplifier ecosystem changes.
     
-    Create isolated sandbox environments where local working directories are
-    snapshotted and served as git dependencies. Other repos fetch from real GitHub.
+    Create isolated container environments where local working directories are
+    snapshotted and served via an embedded Gitea server. All git operations
+    inside the container use your local snapshots instead of fetching from GitHub.
     """
     ctx.ensure_object(dict)
     ctx.obj["manager"] = ShadowManager(shadow_home)
@@ -51,19 +51,16 @@ def main(ctx: click.Context, shadow_home: Path | None) -> None:
 )
 @click.option("--name", "-n", help="Name for the environment (auto-generated if not provided)")
 @click.option(
-    "--mode", "-m",
-    type=click.Choice(["auto", "bubblewrap", "seatbelt", "direct"]),
-    default="auto",
-    help="Sandbox mode (default: auto-detect). Use 'direct' for minimal isolation.",
+    "--image", "-i",
+    default=DEFAULT_IMAGE,
+    help=f"Container image to use (default: {DEFAULT_IMAGE})",
 )
-@click.option("--no-network", is_flag=True, help="Disable network access entirely")
 @click.pass_context
 def create(
     ctx: click.Context,
     local: tuple[str, ...],
     name: str | None,
-    mode: str,
-    no_network: bool,
+    image: str,
 ) -> None:
     """
     Create a new shadow environment with local source overrides.
@@ -75,17 +72,16 @@ def create(
     Examples:
     
         # Create shadow with local amplifier-core
-        amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
+        shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
         
         # Multiple local sources
-        amplifier-shadow create \\
+        shadow create \\
             --local ~/repos/amplifier-core:microsoft/amplifier-core \\
             --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \\
             --name test-env
         
         # Then test inside the shadow:
-        amplifier-shadow exec test-env "uv tool install git+https://github.com/microsoft/amplifier"
-        # -> amplifier fetches from real GitHub
+        shadow exec test-env "uv pip install git+https://github.com/microsoft/amplifier"
         # -> amplifier-core/foundation use your local snapshots
     """
     manager: ShadowManager = ctx.obj["manager"]
@@ -94,7 +90,7 @@ def create(
         error_console.print("[red]Error:[/red] At least one --local source is required")
         error_console.print()
         error_console.print("Example:")
-        error_console.print("  amplifier-shadow create --local ~/repos/myrepo:org/myrepo")
+        error_console.print("  shadow create --local ~/repos/myrepo:org/myrepo")
         sys.exit(1)
     
     with console.status("[bold blue]Creating shadow environment..."):
@@ -102,8 +98,7 @@ def create(
             env = run_async(manager.create(
                 local_sources=list(local),
                 name=name,
-                mode=mode,
-                network_enabled=not no_network,
+                image=image,
             ))
         except Exception as e:
             error_console.print(f"[red]Error:[/red] {e}")
@@ -112,14 +107,14 @@ def create(
     console.print()
     console.print("[green]Shadow environment ready![/green]")
     console.print(f"  ID: [bold]{env.shadow_id}[/bold]")
-    console.print(f"  Mode: {env.backend.name}")
+    console.print(f"  Mode: container")
     console.print(f"  Local sources:")
     for r in env.repos:
         console.print(f"    - {r.full_name} <- {r.local_path}")
     console.print()
     console.print("Next steps:")
-    console.print(f"  [dim]amplifier-shadow exec {env.shadow_id} \"uv tool install git+https://github.com/...\"[/dim]")
-    console.print(f"  [dim]amplifier-shadow shell {env.shadow_id}[/dim]")
+    console.print(f"  [dim]shadow exec {env.shadow_id} \"uv pip install git+https://github.com/...\"[/dim]")
+    console.print(f"  [dim]shadow shell {env.shadow_id}[/dim]")
 
 
 @main.command()
@@ -137,15 +132,21 @@ def exec(ctx: click.Context, shadow_id: str, command: str, timeout: int) -> None
     
     Examples:
     
-        amplifier-shadow exec shadow-abc123 "uv tool install git+https://github.com/microsoft/amplifier"
+        shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
         
-        amplifier-shadow exec shadow-abc123 "amplifier --version"
+        shadow exec shadow-abc123 "amplifier --version"
     """
     manager: ShadowManager = ctx.obj["manager"]
     
     env = manager.get(shadow_id)
     if not env:
         error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        sys.exit(1)
+    
+    # Check if container is running
+    if not run_async(env.is_running()):
+        error_console.print(f"[red]Error:[/red] Container not running for: {shadow_id}")
+        error_console.print("[dim]The container may have stopped. Try recreating the environment.[/dim]")
         sys.exit(1)
     
     result = run_async(env.exec(command, timeout=timeout))
@@ -169,13 +170,19 @@ def shell(ctx: click.Context, shadow_id: str) -> None:
     
     Example:
     
-        amplifier-shadow shell shadow-abc123
+        shadow shell shadow-abc123
     """
     manager: ShadowManager = ctx.obj["manager"]
     
     env = manager.get(shadow_id)
     if not env:
         error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        sys.exit(1)
+    
+    # Check if container is running
+    if not run_async(env.is_running()):
+        error_console.print(f"[red]Error:[/red] Container not running for: {shadow_id}")
+        error_console.print("[dim]The container may have stopped. Try recreating the environment.[/dim]")
         sys.exit(1)
     
     console.print(f"[dim]Entering shadow environment {shadow_id}...[/dim]")
@@ -203,16 +210,17 @@ def list_envs(ctx: click.Context) -> None:
     table.add_column("Mode")
     table.add_column("Repos")
     table.add_column("Created")
-    table.add_column("Status")
+    table.add_column("Running")
     
     for env in environments:
         info = env.to_info()
+        is_running = run_async(env.is_running())
         table.add_row(
             info.shadow_id,
             info.mode,
             ", ".join(info.repos[:2]) + ("..." if len(info.repos) > 2 else ""),
             info.created_at[:19],  # Truncate to seconds
-            info.status,
+            "[green]yes[/green]" if is_running else "[red]no[/red]",
         )
     
     console.print(table)
@@ -231,11 +239,12 @@ def status(ctx: click.Context, shadow_id: str) -> None:
         sys.exit(1)
     
     info = env.to_info()
+    is_running = run_async(env.is_running())
     
     console.print(f"[bold]Shadow Environment: {info.shadow_id}[/bold]")
     console.print()
     console.print(f"  Mode: {info.mode}")
-    console.print(f"  Status: {info.status}")
+    console.print(f"  Running: {'[green]yes[/green]' if is_running else '[red]no[/red]'}")
     console.print(f"  Created: {info.created_at}")
     console.print(f"  Directory: {info.shadow_dir}")
     console.print()
@@ -275,22 +284,22 @@ def diff(ctx: click.Context, shadow_id: str, path: str | None) -> None:
 
 @main.command()
 @click.argument("shadow_id")
-@click.argument("sandbox_path")
+@click.argument("container_path")
 @click.argument("host_path")
 @click.pass_context
-def extract(ctx: click.Context, shadow_id: str, sandbox_path: str, host_path: str) -> None:
+def extract(ctx: click.Context, shadow_id: str, container_path: str, host_path: str) -> None:
     """
     Extract a file from a shadow environment to the host.
     
     SHADOW_ID: ID of the shadow environment
     
-    SANDBOX_PATH: Path inside the sandbox (e.g., /workspace/file.py)
+    CONTAINER_PATH: Path inside the container (e.g., /workspace/file.py)
     
     HOST_PATH: Destination path on the host
     
     Example:
     
-        amplifier-shadow extract shadow-abc123 /workspace/src/fix.py ./fix.py
+        shadow extract shadow-abc123 /workspace/src/fix.py ./fix.py
     """
     manager: ShadowManager = ctx.obj["manager"]
     
@@ -300,7 +309,7 @@ def extract(ctx: click.Context, shadow_id: str, sandbox_path: str, host_path: st
         sys.exit(1)
     
     try:
-        bytes_copied = env.extract(sandbox_path, host_path)
+        bytes_copied = env.extract(container_path, host_path)
         console.print(f"[green]Extracted to {host_path}[/green] ({bytes_copied} bytes)")
     except FileNotFoundError as e:
         error_console.print(f"[red]Error:[/red] {e}")
@@ -313,9 +322,9 @@ def extract(ctx: click.Context, shadow_id: str, sandbox_path: str, host_path: st
 @main.command()
 @click.argument("shadow_id")
 @click.argument("host_path")
-@click.argument("sandbox_path")
+@click.argument("container_path")
 @click.pass_context
-def inject(ctx: click.Context, shadow_id: str, host_path: str, sandbox_path: str) -> None:
+def inject(ctx: click.Context, shadow_id: str, host_path: str, container_path: str) -> None:
     """
     Copy a file from the host into a shadow environment.
     
@@ -323,11 +332,11 @@ def inject(ctx: click.Context, shadow_id: str, host_path: str, sandbox_path: str
     
     HOST_PATH: Source path on the host
     
-    SANDBOX_PATH: Destination path inside the sandbox
+    CONTAINER_PATH: Destination path inside the container
     
     Example:
     
-        amplifier-shadow inject shadow-abc123 ./fix.py /workspace/src/fix.py
+        shadow inject shadow-abc123 ./fix.py /workspace/src/fix.py
     """
     manager: ShadowManager = ctx.obj["manager"]
     
@@ -337,8 +346,8 @@ def inject(ctx: click.Context, shadow_id: str, host_path: str, sandbox_path: str
         sys.exit(1)
     
     try:
-        env.inject(host_path, sandbox_path)
-        console.print(f"[green]Injected {host_path} to {sandbox_path}[/green]")
+        env.inject(host_path, container_path)
+        console.print(f"[green]Injected {host_path} to {container_path}[/green]")
     except FileNotFoundError as e:
         error_console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
@@ -365,7 +374,7 @@ def destroy(ctx: click.Context, shadow_id: str, force: bool) -> None:
             return
     
     try:
-        manager.destroy(shadow_id)
+        run_async(manager.destroy(shadow_id))
         console.print(f"[green]Destroyed {shadow_id}[/green]")
     except ValueError as e:
         error_console.print(f"[red]Error:[/red] {e}")
@@ -384,26 +393,8 @@ def destroy_all(ctx: click.Context, force: bool) -> None:
             console.print("[dim]Cancelled.[/dim]")
             return
     
-    count = manager.destroy_all(force=True)
+    count = run_async(manager.destroy_all(force=True))
     console.print(f"[green]Destroyed {count} environment(s)[/green]")
-
-
-@main.command()
-def backends() -> None:
-    """Show available sandbox backends on this system."""
-    available = get_available_backends()
-    
-    if not available:
-        console.print("[yellow]No sandbox backends available.[/yellow]")
-        console.print()
-        console.print("Install one of:")
-        console.print("  - bubblewrap (Linux): apt install bubblewrap")
-        console.print("  - sandbox-exec is built into macOS")
-        return
-    
-    console.print("[bold]Available backends:[/bold]")
-    for backend in available:
-        console.print(f"  - {backend}")
 
 
 if __name__ == "__main__":

@@ -8,41 +8,30 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from .container import ContainerRuntime, Mount
 from .environment import ShadowEnvironment
+from .gitea import GiteaClient
 from .models import RepoSpec, ShadowStatus
-from .repos import RepoManager
-from .sandbox import get_sandbox_backend
+from .snapshot import SnapshotManager
 
+__all__ = ["ShadowManager"]
 
-# Base gitconfig template (repo-specific URL rewrites added dynamically)
-GITCONFIG_BASE = """
-[user]
-    name = Shadow Environment
-    email = shadow@localhost
-
-[init]
-    defaultBranch = main
-
-[safe]
-    directory = *
-
-[advice]
-    detachedHead = false
-"""
+# Default shadow container image
+DEFAULT_IMAGE = "ghcr.io/microsoft/amplifier-shadow:latest"
 
 
 class ShadowManager:
     """
     Manages the lifecycle of shadow environments.
     
-    This class handles:
-    - Creating new shadow environments with local source snapshots
-    - Selective git URL rewriting for specified repos only
-    - Tracking active environments
-    - Destroying environments and cleaning up
+    Shadow environments use containers with embedded Gitea for complete
+    git isolation. Each shadow has its own container with:
+    - Gitea server on localhost:3000
+    - Local source snapshots pushed as repos
+    - Git URL rewriting to redirect GitHub URLs to local Gitea
     """
     
-    def __init__(self, shadow_home: Path | None = None):
+    def __init__(self, shadow_home: Path | None = None) -> None:
         """
         Initialize the shadow manager.
         
@@ -50,16 +39,14 @@ class ShadowManager:
             shadow_home: Base directory for shadow data. Defaults to ~/.shadow
         """
         self.shadow_home = shadow_home or Path.home() / ".shadow"
-        self.staging_dir = self.shadow_home / "staging"
         self.environments_dir = self.shadow_home / "environments"
         
         # Ensure directories exist
         self.shadow_home.mkdir(parents=True, exist_ok=True)
-        self.staging_dir.mkdir(parents=True, exist_ok=True)
         self.environments_dir.mkdir(parents=True, exist_ok=True)
         
-        # Repository manager for cloning/caching
-        self.repo_manager = RepoManager(self.staging_dir)
+        # Container runtime
+        self.runtime = ContainerRuntime()
         
         # In-memory cache of active environments
         self._environments: dict[str, ShadowEnvironment] = {}
@@ -68,79 +55,109 @@ class ShadowManager:
         self,
         local_sources: list[str] | None = None,
         name: str | None = None,
-        mode: str = "auto",
-        network_enabled: bool = True,
+        image: str = DEFAULT_IMAGE,
     ) -> ShadowEnvironment:
         """
-        Create a new shadow environment with local source overrides.
+        Create a new shadow environment.
         
         Args:
             local_sources: List of local source mappings (e.g., '~/repos/amplifier-core:microsoft/amplifier-core')
             name: Optional name for the environment. Auto-generated if not provided.
-            mode: Sandbox mode - "auto", "bubblewrap", "seatbelt", or "direct"
-            network_enabled: Whether to allow network access
+            image: Container image to use (defaults to ghcr.io/microsoft/amplifier-shadow:latest)
             
         Returns:
             A new ShadowEnvironment ready for use
-            
-        Example:
-            # Create shadow with local amplifier-core, other deps fetch from real GitHub
-            await manager.create(
-                local_sources=['~/repos/amplifier-core:microsoft/amplifier-core'],
-                name='test-my-changes',
-            )
-            
-            # Then inside the shadow:
-            # uv tool install git+https://github.com/microsoft/amplifier
-            # -> amplifier fetches from real GitHub
-            # -> amplifier-core (dependency) uses your local snapshot
         """
         local_sources = local_sources or []
         
         # Generate shadow ID
-        shadow_id = name or f"shadow-{uuid.uuid4().hex[:6]}"
+        shadow_id = name or f"shadow-{uuid.uuid4().hex[:8]}"
+        container_name = f"shadow-{shadow_id}"
         shadow_dir = self.environments_dir / shadow_id
         
         # Check if already exists
         if shadow_dir.exists():
             raise ValueError(f"Shadow environment already exists: {shadow_id}")
         
+        # Check if container already running
+        if await self.runtime.exists(container_name):
+            raise ValueError(f"Container already exists: {container_name}")
+        
         # Create directory structure
         shadow_dir.mkdir(parents=True)
         workspace_dir = shadow_dir / "workspace"
         workspace_dir.mkdir()
-        home_dir = shadow_dir / "home"
-        home_dir.mkdir()
-        amplifier_home = home_dir / ".amplifier"
-        amplifier_home.mkdir()
-        repos_dir = shadow_dir / "repos" / "github.com"
-        repos_dir.mkdir(parents=True)
+        snapshots_dir = shadow_dir / "snapshots"
+        snapshots_dir.mkdir()
         
         # Parse local source specs
         repo_specs = [RepoSpec.parse_local(ls) for ls in local_sources]
         
-        # Create bare repos from local sources (snapshots working directory state)
+        # Create snapshots of local repositories
+        snapshot_mgr = SnapshotManager(snapshots_dir)
         for spec in repo_specs:
-            await self.repo_manager.create_bare_from_local(spec, repos_dir)
+            if spec.local_path:
+                await snapshot_mgr.create_snapshot(
+                    local_path=spec.local_path,
+                    org=spec.org,
+                    name=spec.name,
+                )
         
-        # Write configuration files
-        self._write_gitconfig(shadow_dir, repo_specs)
-        self._write_metadata(shadow_dir, shadow_id, repo_specs, mode)
+        # Start container
+        mounts = [
+            Mount(snapshots_dir, "/snapshots", readonly=True),
+            Mount(workspace_dir, "/workspace", readonly=False),
+        ]
         
-        # Get sandbox backend
-        backend = get_sandbox_backend(
-            shadow_dir=shadow_dir,
-            repos_dir=repos_dir,
-            mode=mode,
-            network_enabled=network_enabled,
-        )
+        try:
+            container_id = await self.runtime.run(
+                image=image,
+                name=container_name,
+                mounts=mounts,
+                detach=True,
+            )
+        except Exception as e:
+            # Cleanup on failure
+            shutil.rmtree(shadow_dir)
+            raise RuntimeError(f"Failed to start container: {e}") from e
+        
+        # Wait for Gitea to be ready and set up repos
+        try:
+            gitea = GiteaClient(
+                runtime=self.runtime,
+                container=container_name,
+            )
+            
+            await gitea.wait_ready(timeout=60.0)
+            
+            # Push snapshots to Gitea
+            for spec in repo_specs:
+                bundle_path = f"/snapshots/{spec.org}/{spec.name}.bundle"
+                await gitea.setup_repo_from_bundle(
+                    org=spec.org,
+                    name=spec.name,
+                    bundle_container_path=bundle_path,
+                )
+            
+            # Configure git URL rewriting
+            await self._configure_git_rewriting(container_name, repo_specs)
+            
+        except Exception as e:
+            # Cleanup on failure
+            await self.runtime.remove(container_name, force=True)
+            shutil.rmtree(shadow_dir)
+            raise RuntimeError(f"Failed to setup shadow environment: {e}") from e
+        
+        # Write metadata
+        self._write_metadata(shadow_dir, shadow_id, repo_specs, image)
         
         # Create environment object
         env = ShadowEnvironment(
             shadow_id=shadow_id,
+            container_name=container_name,
             repos=repo_specs,
             shadow_dir=shadow_dir,
-            backend=backend,
+            runtime=self.runtime,
             created_at=datetime.now(),
             status=ShadowStatus.READY,
         )
@@ -163,10 +180,9 @@ class ShadowManager:
         return self._load_from_disk(shadow_id)
     
     def list_environments(self) -> list[ShadowEnvironment]:
-        """List all shadow environments (active and on-disk)."""
+        """List all shadow environments."""
         environments = []
         
-        # Load all from disk
         if self.environments_dir.exists():
             for shadow_dir in self.environments_dir.iterdir():
                 if shadow_dir.is_dir():
@@ -176,7 +192,7 @@ class ShadowManager:
         
         return environments
     
-    def destroy(self, shadow_id: str, force: bool = False) -> None:
+    async def destroy(self, shadow_id: str, force: bool = False) -> None:
         """
         Destroy a shadow environment.
         
@@ -185,11 +201,14 @@ class ShadowManager:
             force: If True, destroy even if there are errors
         """
         shadow_dir = self.environments_dir / shadow_id
+        container_name = f"shadow-{shadow_id}"
         
-        if not shadow_dir.exists():
-            if force:
-                return
-            raise ValueError(f"Shadow environment not found: {shadow_id}")
+        # Stop and remove container
+        try:
+            await self.runtime.remove(container_name, force=True)
+        except Exception:
+            if not force:
+                raise
         
         # Remove from cache
         if shadow_id in self._environments:
@@ -197,15 +216,13 @@ class ShadowManager:
             del self._environments[shadow_id]
         
         # Remove directory
-        shutil.rmtree(shadow_dir)
+        if shadow_dir.exists():
+            shutil.rmtree(shadow_dir)
     
-    def destroy_all(self, force: bool = False) -> int:
+    async def destroy_all(self, force: bool = False) -> int:
         """
         Destroy all shadow environments.
         
-        Args:
-            force: If True, continue on errors
-            
         Returns:
             Number of environments destroyed
         """
@@ -215,7 +232,7 @@ class ShadowManager:
             for shadow_dir in list(self.environments_dir.iterdir()):
                 if shadow_dir.is_dir():
                     try:
-                        self.destroy(shadow_dir.name, force=force)
+                        await self.destroy(shadow_dir.name, force=force)
                         count += 1
                     except Exception:
                         if not force:
@@ -223,46 +240,51 @@ class ShadowManager:
         
         return count
     
-    def _write_gitconfig(self, shadow_dir: Path, local_repos: list[RepoSpec]) -> None:
-        """
-        Write the .gitconfig file for the shadow environment.
+    async def _configure_git_rewriting(
+        self,
+        container: str,
+        local_repos: list[RepoSpec],
+    ) -> None:
+        """Configure git to rewrite GitHub URLs to local Gitea."""
+        # Base git config
+        commands = [
+            'git config --global user.email "shadow@localhost"',
+            'git config --global user.name "Shadow"',
+            'git config --global init.defaultBranch main',
+            'git config --global advice.detachedHead false',
+        ]
         
-        Only rewrites URLs for repos that have local sources staged.
-        Other repos fetch from real GitHub.
-        
-        Note: The sandbox mounts repos/github.com to /repos, so paths inside
-        the sandbox are /repos/{org}/{name}.git (no github.com in path).
-        """
-        gitconfig_path = shadow_dir / "home" / ".gitconfig"
-        
-        # Start with base config
-        gitconfig_lines = [GITCONFIG_BASE.strip()]
-        
-        # Add URL rewriting ONLY for local source repos
-        # Path inside sandbox: /repos/{org}/{name}.git (sandbox mounts repos/github.com -> /repos)
+        # Add URL rewriting for each local repo
         for spec in local_repos:
-            sandbox_bare_path = f"/repos/{spec.org}/{spec.name}.git"
-            gitconfig_lines.append(f'''
-[url "file://{sandbox_bare_path}"]
-    insteadOf = https://github.com/{spec.org}/{spec.name}
-    insteadOf = https://github.com/{spec.org}/{spec.name}.git
-    insteadOf = git@github.com:{spec.org}/{spec.name}
-    insteadOf = git@github.com:{spec.org}/{spec.name}.git
-    insteadOf = ssh://git@github.com/{spec.org}/{spec.name}
-    insteadOf = git+https://github.com/{spec.org}/{spec.name}
-''')
+            gitea_url = f"http://shadow:shadow@localhost:3000/{spec.org}/{spec.name}.git"
+            
+            # Rewrite various GitHub URL formats
+            patterns = [
+                f"https://github.com/{spec.org}/{spec.name}",
+                f"https://github.com/{spec.org}/{spec.name}.git",
+                f"git@github.com:{spec.org}/{spec.name}",
+                f"git@github.com:{spec.org}/{spec.name}.git",
+                f"ssh://git@github.com/{spec.org}/{spec.name}",
+                f"git+https://github.com/{spec.org}/{spec.name}",
+            ]
+            
+            for pattern in patterns:
+                commands.append(
+                    f'git config --global url."{gitea_url}".insteadOf "{pattern}"'
+                )
         
-        gitconfig_path.write_text("\n".join(gitconfig_lines))
+        # Execute all commands
+        for cmd in commands:
+            await self.runtime.exec(container, cmd)
     
     def _write_metadata(
         self,
         shadow_dir: Path,
         shadow_id: str,
         repos: list[RepoSpec],
-        mode: str,
+        image: str,
     ) -> None:
         """Write metadata file for the shadow environment."""
-        # Store both simple names and local source info
         local_sources = []
         for r in repos:
             source_info = {"repo": r.full_name}
@@ -272,8 +294,9 @@ class ShadowManager:
         
         metadata = {
             "shadow_id": shadow_id,
+            "container_name": f"shadow-{shadow_id}",
             "local_sources": local_sources,
-            "mode": mode,
+            "image": image,
             "created_at": datetime.now().isoformat(),
         }
         metadata_path = shadow_dir / "metadata.json"
@@ -286,7 +309,6 @@ class ShadowManager:
         if not shadow_dir.exists():
             return None
         
-        # Read metadata
         metadata_path = shadow_dir / "metadata.json"
         if not metadata_path.exists():
             return None
@@ -296,7 +318,7 @@ class ShadowManager:
         except (json.JSONDecodeError, OSError):
             return None
         
-        # Parse repos from local_sources format
+        # Parse repos
         repo_specs = []
         for source_info in metadata.get("local_sources", []):
             if isinstance(source_info, dict):
@@ -305,32 +327,23 @@ class ShadowManager:
                     spec.local_path = Path(source_info["local_path"])
                 repo_specs.append(spec)
             elif isinstance(source_info, str):
-                # Legacy format fallback
                 repo_specs.append(RepoSpec.parse(source_info))
         
-        # Get backend
-        repos_dir = shadow_dir / "repos" / "github.com"
-        try:
-            backend = get_sandbox_backend(
-                shadow_dir=shadow_dir,
-                repos_dir=repos_dir,
-                mode=metadata.get("mode", "auto"),
-            )
-        except RuntimeError:
-            return None
-        
-        # Create environment object
+        # Parse created_at
         created_at_str = metadata.get("created_at", datetime.now().isoformat())
         try:
             created_at = datetime.fromisoformat(created_at_str)
         except ValueError:
             created_at = datetime.now()
         
+        container_name = metadata.get("container_name", f"shadow-{shadow_id}")
+        
         env = ShadowEnvironment(
             shadow_id=shadow_id,
+            container_name=container_name,
             repos=repo_specs,
             shadow_dir=shadow_dir,
-            backend=backend,
+            runtime=self.runtime,
             created_at=created_at,
             status=ShadowStatus.READY,
         )

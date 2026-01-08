@@ -1,17 +1,18 @@
 # Amplifier Shadow
 
-OS-level sandboxed environments for safely testing Amplifier ecosystem changes.
+Container-based isolated environments for safely testing Amplifier ecosystem changes.
 
 ## Overview
 
-Amplifier Shadow creates isolated "shadow" environments that let you test local changes to Amplifier ecosystem packages before deploying them. Your local working directories (including uncommitted changes) are snapshotted and served as git dependencies, while everything else fetches from real GitHub.
+Amplifier Shadow creates isolated "shadow" environments that let you test local changes to Amplifier ecosystem packages before deploying them. Your local working directories (including uncommitted changes) are snapshotted and served via an embedded Gitea server, while everything else fetches from real GitHub.
 
 ## Key Features
 
 - **Local Source Snapshots**: Test your working directory state, including uncommitted changes
+- **Embedded Gitea**: Local git server inside the container handles your snapshotted repos
 - **Selective URL Rewriting**: Only your specified repos are redirected; everything else uses real GitHub
-- **OS-Level Sandboxing**: Uses Bubblewrap (Linux) or Seatbelt (macOS) for process isolation
-- **File Operations**: Diff, extract, and inject files between sandbox and host
+- **Container Isolation**: Uses Docker or Podman for complete environment isolation
+- **File Operations**: Diff, extract, and inject files between container and host
 - **Ephemeral Environments**: Create, use, and destroy environments as needed
 
 ## Installation
@@ -28,70 +29,88 @@ uv pip install -e ".[dev]"
 
 ### Prerequisites
 
-**Linux:**
+**Container Runtime (required):**
 ```bash
-# Install bubblewrap
-sudo apt install bubblewrap  # Debian/Ubuntu
-sudo dnf install bubblewrap  # Fedora/RHEL
+# Docker
+sudo apt install docker.io  # Debian/Ubuntu
+brew install docker         # macOS
+
+# Or Podman (preferred - rootless by default)
+sudo apt install podman     # Debian/Ubuntu
+brew install podman         # macOS
 ```
 
-**macOS:**
-- sandbox-exec is built into macOS (no installation needed)
+The shadow tool will automatically detect and use podman if available, falling back to docker.
 
 ## Quick Start
 
 ```bash
 # Create a shadow with your local amplifier-core changes
-amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
+shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
 
 # Inside the shadow, install amplifier normally
 # -> amplifier fetches from REAL GitHub
 # -> amplifier-core uses YOUR LOCAL snapshot
-amplifier-shadow exec shadow-abc123 "uv tool install git+https://github.com/microsoft/amplifier"
+shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
 
 # Test it
-amplifier-shadow exec shadow-abc123 "amplifier --version"
+shadow exec shadow-abc123 "amplifier --version"
 
 # See what changed
-amplifier-shadow diff shadow-abc123
+shadow diff shadow-abc123
 
 # Open an interactive shell
-amplifier-shadow shell shadow-abc123
+shadow shell shadow-abc123
 
 # Clean up when done
-amplifier-shadow destroy shadow-abc123
+shadow destroy shadow-abc123
 ```
 
 ## How It Works
+
+### Architecture
+
+Shadow environments use a container with an embedded Gitea server:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Shadow Container                                   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  Gitea Server (localhost:3000)              │   │
+│  │  - microsoft/amplifier-core (your snapshot) │   │
+│  │  - microsoft/amplifier-foundation           │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                     │
+│  Git URL Rewriting:                                │
+│  github.com/microsoft/amplifier-core → Gitea      │
+│  github.com/microsoft/amplifier → Real GitHub     │
+│                                                     │
+│  /workspace (your working directory)               │
+└─────────────────────────────────────────────────────┘
+```
 
 ### Local Source Snapshots
 
 When you create a shadow with `--local /path/to/repo:org/name`:
 
-1. Your working directory is snapshotted (including uncommitted changes)
-2. The snapshot becomes a bare git repo inside the sandbox
-3. Git URL rewriting redirects only that specific repo to the local snapshot
-4. All other repos fetch from real GitHub normally
+1. Your working directory is snapshotted as a git bundle (including uncommitted changes)
+2. The container starts with an embedded Gitea server
+3. Your snapshot is pushed to Gitea as `org/name`
+4. Git URL rewriting redirects that specific repo to local Gitea
+5. All other repos fetch from real GitHub normally
 
 ### Selective Git URL Rewriting
 
-Inside the sandbox, `.gitconfig` rewrites URLs only for your local sources:
+Inside the container, git config rewrites URLs only for your local sources:
 
 ```
-[url "file:///repos/microsoft/amplifier-core.git"]
+[url "http://shadow:shadow@localhost:3000/microsoft/amplifier-core.git"]
     insteadOf = https://github.com/microsoft/amplifier-core
 ```
 
 This means:
 - `git clone https://github.com/microsoft/amplifier-core` → uses your local snapshot
 - `git clone https://github.com/microsoft/amplifier` → fetches from real GitHub
-
-### Sandbox Backends
-
-| Platform | Backend | Tool |
-|----------|---------|------|
-| Linux | Bubblewrap | `bwrap` |
-| macOS | Seatbelt | `sandbox-exec` |
 
 ## CLI Commands
 
@@ -107,7 +126,14 @@ This means:
 | `inject` | Copy file from host to shadow |
 | `destroy` | Destroy an environment |
 | `destroy-all` | Destroy all environments |
-| `backends` | Show available sandbox backends |
+
+### Create Options
+
+| Option | Description |
+|--------|-------------|
+| `--local`, `-l` | Local source mapping: `/path/to/repo:org/name` (repeatable) |
+| `--name`, `-n` | Name for the environment (auto-generated if not provided) |
+| `--image`, `-i` | Container image to use (default: `ghcr.io/microsoft/amplifier-shadow:latest`) |
 
 ## Use Cases
 
@@ -115,41 +141,41 @@ This means:
 
 ```bash
 # You're working on amplifier-core and want to test the full install flow
-amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name test-core
+shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name test-core
 
 # Install amplifier - it will use your local amplifier-core changes
-amplifier-shadow exec test-core "uv tool install git+https://github.com/microsoft/amplifier"
+shadow exec test-core "uv pip install git+https://github.com/microsoft/amplifier"
 
 # Run tests or use amplifier
-amplifier-shadow exec test-core "amplifier run"
+shadow exec test-core "amplifier run"
 ```
 
 ### Testing Multi-Repo Changes
 
 ```bash
 # Testing changes across multiple repos
-amplifier-shadow create \
+shadow create \
     --local ~/repos/amplifier-core:microsoft/amplifier-core \
     --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
     --name multi-test
 
 # Both local sources will be used, amplifier itself fetches from GitHub
-amplifier-shadow exec multi-test "uv tool install git+https://github.com/microsoft/amplifier"
+shadow exec multi-test "uv pip install git+https://github.com/microsoft/amplifier"
 ```
 
 ### Interactive Development
 
 ```bash
 # Open a shell for interactive testing
-amplifier-shadow shell test-env
+shadow shell test-env
 
 # Inside the shadow shell:
-$ uv tool install git+https://github.com/microsoft/amplifier
+$ uv pip install git+https://github.com/microsoft/amplifier
 $ amplifier --version
 $ exit
 
 # Back on host - extract any files you created
-amplifier-shadow extract test-env /workspace/notes.txt ./notes.txt
+shadow extract test-env /workspace/notes.txt ./notes.txt
 ```
 
 ## Contributing
