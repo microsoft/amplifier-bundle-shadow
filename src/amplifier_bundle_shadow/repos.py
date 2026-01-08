@@ -12,11 +12,11 @@ from .models import RepoSpec
 
 class RepoManager:
     """
-    Manages repository cloning and caching for shadow environments.
+    Manages repository snapshots for shadow environments.
     
-    Repositories are cached in a staging directory and copied as bare repos
-    into each shadow environment. This allows fast creation of new environments
-    while keeping them isolated from each other.
+    Local source directories are snapshotted (with full git history preserved)
+    into bare repos for each shadow environment. Uncommitted changes in the
+    working directory are captured as a new commit on top of the history.
     """
     
     def __init__(self, staging_dir: Path):

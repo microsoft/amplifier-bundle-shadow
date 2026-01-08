@@ -47,8 +47,8 @@ class ShadowEnvironment:
     
     @property
     def repos_dir(self) -> Path:
-        """Directory containing mock git repos."""
-        return self.shadow_dir / "repos" / "github.com"
+        """Directory containing local source snapshots as bare git repos."""
+        return self.shadow_dir / "repos"
     
     def _get_env(self) -> dict[str, str]:
         """Get environment variables for sandbox execution."""
