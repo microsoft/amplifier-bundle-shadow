@@ -145,7 +145,16 @@ class SnapshotManager:
         repo_path: Path,
         output_path: Path,
     ) -> str:
-        """Create bundle including uncommitted changes as a snapshot commit."""
+        """Create bundle including uncommitted changes as a snapshot commit.
+        
+        IMPORTANT: When cloning to a temp repo, `git clone` doesn't preserve
+        the original's remote tracking refs (refs/remotes/origin/*). The clone's
+        origin points to the source repo, so its origin/* refs point to the
+        source's local branches, NOT the source's remote tracking branches.
+        
+        We must manually copy the remote tracking refs after cloning to ensure
+        commits pinned in lock files are included in the bundle.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_repo = Path(tmpdir) / "repo"
             
@@ -159,6 +168,10 @@ class SnapshotManager:
             
             if proc.returncode != 0:
                 raise SnapshotError(f"Failed to clone repository: {repo_path}")
+            
+            # Copy remote tracking refs from original repo to temp clone
+            # This ensures commits on origin/main (but not local main) are included
+            await self._copy_remote_refs(repo_path, tmp_repo)
             
             # Copy working tree changes (excluding .git)
             for item in repo_path.iterdir():
@@ -195,6 +208,47 @@ class SnapshotManager:
             
             return commit_sha
     
+    async def _copy_remote_refs(self, source_repo: Path, target_repo: Path) -> None:
+        """
+        Copy remote tracking refs from source repo to target repo.
+        
+        When you `git clone` a local repo, the clone's origin points to that
+        local repo, so origin/* refs in the clone point to the source's local
+        branches. But lock files may pin commits that only exist in the source's
+        refs/remotes/origin/* (e.g., origin/main is ahead of local main).
+        
+        This method fetches those commits and updates the target's remote tracking
+        refs to match the source's refs/remotes/origin/* refs.
+        """
+        # Get all remote tracking refs from source
+        stdout, _ = await self._run_git(source_repo, "show-ref")
+        
+        for line in stdout.strip().split('\n'):
+            if not line or 'refs/remotes/origin/' not in line:
+                continue
+            
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+                
+            sha, ref = parts[0], parts[1]
+            
+            # Skip symbolic refs like HEAD
+            if 'HEAD' in ref:
+                continue
+            
+            # Fetch the commit and update the target's remote tracking ref
+            # This overwrites the clone's auto-created refs/remotes/origin/*
+            # (which point to source's local branches) with the correct commits
+            try:
+                await self._run_git(
+                    target_repo,
+                    "fetch", str(source_repo), f"{sha}:{ref}",
+                )
+            except Exception:
+                # If fetch fails (commit doesn't exist), skip this ref
+                pass
+
     async def _fetch_all_refs(self, repo_path: Path) -> None:
         """
         Fetch all refs from origin to ensure we have all commits.
