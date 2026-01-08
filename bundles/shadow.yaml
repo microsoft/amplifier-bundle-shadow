@@ -2,7 +2,10 @@
 # Provides shadow environment capabilities for testing Amplifier changes
 name: shadow
 version: "0.1.0"
-description: Shadow environments for safely testing Amplifier ecosystem changes
+description: |
+  Shadow environments for safely testing Amplifier ecosystem changes.
+  Snapshots your local working directories and serves them as git dependencies
+  via URL rewriting, while other repos fetch from real GitHub.
 
 # Tools provided by this bundle
 tools:
@@ -17,7 +20,8 @@ agents:
   shadow-operator:
     description: |
       Agent specialized in managing shadow environments for testing.
-      Use this agent when you need to test changes in an isolated environment.
+      Use this agent when you need to test local changes to Amplifier ecosystem
+      packages in an isolated environment before deploying them.
     instructions: shadow:agents/shadow-operator.md
 
 # Context files

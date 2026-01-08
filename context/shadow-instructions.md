@@ -6,7 +6,7 @@ You have access to the `shadow` tool for creating isolated test environments.
 
 | Operation | Description |
 |-----------|-------------|
-| `create` | Create shadow environment with mock repos |
+| `create` | Create shadow environment with local source snapshots |
 | `exec` | Run command inside sandbox |
 | `diff` | Show changed files |
 | `extract` | Copy file from sandbox to host |
@@ -17,64 +17,75 @@ You have access to the `shadow` tool for creating isolated test environments.
 
 ## How It Works
 
-Shadow environments intercept `git+https://github.com/...` URLs using git's URL rewriting feature. When you run:
+Shadow environments use **selective git URL rewriting**. When you create a shadow with local sources:
 
 ```bash
-uv tool install git+https://github.com/microsoft/amplifier
+shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
 ```
 
-Inside a shadow, git rewrites this to:
+Git is configured to rewrite only that specific repo:
 
-```bash
-git clone file:///repos/github.com/microsoft/amplifier.git
+```
+[url "file:///repos/microsoft/amplifier-core.git"]
+    insteadOf = https://github.com/microsoft/amplifier-core
 ```
 
-This means **real GitHub is never contacted** - all git operations use local mock repos.
+This means:
+- `git clone https://github.com/microsoft/amplifier-core` → uses your **local snapshot**
+- `git clone https://github.com/microsoft/amplifier` → fetches from **real GitHub**
+
+Your local working directory (including uncommitted changes) is snapshotted with full git history preserved.
 
 ## Common Patterns
 
-### Test a Feature Branch
+### Test Local Changes
 
 ```python
-# Create shadow with feature branch
-shadow.create(repos=["microsoft/amplifier-core@my-feature"])
+# Create shadow with your local amplifier-core changes
+shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"])
 
-# Install and test
+# Install amplifier - it uses YOUR local amplifier-core
 shadow.exec(shadow_id, "uv tool install git+https://github.com/microsoft/amplifier")
-shadow.exec(shadow_id, "amplifier test-feature")
+shadow.exec(shadow_id, "amplifier --version")
 ```
 
 ### Test Multi-Repo Changes
 
 ```python
-# Create shadow with multiple repos
-shadow.create(repos=[
-    "microsoft/amplifier",
-    "microsoft/amplifier-core",
-    "microsoft/amplifier-foundation"
+# Create shadow with multiple local sources
+shadow.create(local_sources=[
+    "~/repos/amplifier-core:microsoft/amplifier-core",
+    "~/repos/amplifier-foundation:microsoft/amplifier-foundation"
 ])
 
-# Each repo is available as a mock
+# amplifier fetches from real GitHub, but its dependencies use your local snapshots
 ```
 
 ### Extract and Validate
 
 ```python
-# After inner agent makes changes
+# After making changes inside the sandbox
 changes = shadow.diff(shadow_id)
 
-# Extract promising fixes
+# Extract files for review
 for file in changes["changed_files"]:
     shadow.extract(shadow_id, file["path"], f"./extracted{file['path']}")
 
 # Test in fresh environment
-shadow.create(repos=["microsoft/amplifier"], name="validation")
+shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"], name="validation")
 # ... inject and test
 ```
 
 ## Isolation Guarantees
 
 - **Filesystem**: Only `/workspace` and home directory are writable
-- **Network**: github.com blocked, other sites accessible
+- **Network**: Full access (including GitHub for repos not in your local sources)
 - **Processes**: Isolated via Bubblewrap (Linux) or Seatbelt (macOS)
 - **Environment**: Fresh `AMPLIFIER_HOME`, isolated git config
+- **Git history**: Preserved from your local repos (pinned commits work)
+
+## Important Notes
+
+- **Keep local repos current**: Run `git fetch --all` if pinned commits fail
+- **Uncommitted changes included**: Your working directory state is captured
+- **Only specified repos are local**: Everything else uses real GitHub
