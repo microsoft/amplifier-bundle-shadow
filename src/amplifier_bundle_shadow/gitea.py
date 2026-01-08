@@ -39,7 +39,7 @@ class GiteaClient:
     password: str = "shadow"
     
     async def wait_ready(self, timeout: float = 30.0) -> None:
-        """Wait for Gitea to be ready to accept requests."""
+        """Wait for Gitea to be ready AND admin user to exist."""
         start = asyncio.get_event_loop().time()
         
         while True:
@@ -49,11 +49,21 @@ class GiteaClient:
                     f"Gitea did not become ready within {timeout}s"
                 )
             
+            # First check if Gitea API responds
             code, stdout, _ = await self._exec(
                 f"curl -s {self.base_url}/api/v1/version"
             )
             
-            if code == 0 and "version" in stdout:
+            if code != 0 or "version" not in stdout:
+                await asyncio.sleep(0.5)
+                continue
+            
+            # Then verify admin user exists (entrypoint creates it after Gitea starts)
+            auth_code, auth_stdout, _ = await self._exec(
+                f"curl -s -u {self.username}:{self.password} {self.base_url}/api/v1/user"
+            )
+            
+            if auth_code == 0 and '"login"' in auth_stdout:
                 return
             
             await asyncio.sleep(0.5)

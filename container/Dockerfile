@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     sqlite3 \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gitea
@@ -20,21 +21,26 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/ \
     && mv /root/.local/bin/uvx /usr/local/bin/
 
-# Create directories
-RUN mkdir -p /var/lib/gitea /etc/gitea /workspace /snapshots /home/shadow
+# Create non-root user for Gitea and workspace
+RUN useradd -m -d /home/amplifier -s /bin/bash -U amplifier \
+    && mkdir -p /var/lib/gitea /etc/gitea /workspace /snapshots \
+    && chown -R amplifier:amplifier /var/lib/gitea /etc/gitea /workspace /snapshots /home/amplifier
 
 # Copy Gitea config
 COPY app.ini /etc/gitea/app.ini
+RUN chown amplifier:amplifier /etc/gitea/app.ini
 
 # Copy entrypoint
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Environment
-ENV HOME=/home/shadow
+ENV HOME=/home/amplifier
 ENV GITEA_WORK_DIR=/var/lib/gitea
-ENV USER=root
+ENV USER=amplifier
 
+# Run as amplifier user
+USER amplifier
 WORKDIR /workspace
 
 ENTRYPOINT ["/entrypoint.sh"]

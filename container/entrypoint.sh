@@ -22,6 +22,7 @@ done
 
 # Create admin user if not exists (ignore errors if already exists)
 gitea admin user create \
+    --config /etc/gitea/app.ini \
     --admin \
     --username shadow \
     --password shadow \
@@ -34,5 +35,12 @@ git config --global user.name "Shadow"
 git config --global init.defaultBranch main
 git config --global advice.detachedHead false
 
-# Execute the requested command
-exec "$@"
+# If no command provided or command is "bash", keep container alive
+if [ $# -eq 0 ] || [ "$1" = "bash" ]; then
+    echo "Shadow environment ready. Keeping container alive..."
+    # Wait for Gitea process to keep container running
+    wait $GITEA_PID
+else
+    # Execute the requested command
+    exec "$@"
+fi
