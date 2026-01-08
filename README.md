@@ -4,14 +4,14 @@ OS-level sandboxed environments for safely testing Amplifier ecosystem changes.
 
 ## Overview
 
-Amplifier Shadow creates isolated "shadow" environments that intercept git operations to use local mock repositories. This enables safe testing of changes to Amplifier, amplifier-core, amplifier-foundation, and other ecosystem components before deployment.
+Amplifier Shadow creates isolated "shadow" environments that let you test local changes to Amplifier ecosystem packages before deploying them. Your local working directories (including uncommitted changes) are snapshotted and served as git dependencies, while everything else fetches from real GitHub.
 
 ## Key Features
 
-- **Git URL Interception**: Rewrites `https://github.com/` URLs to local bare repos
+- **Local Source Snapshots**: Test your working directory state, including uncommitted changes
+- **Selective URL Rewriting**: Only your specified repos are redirected; everything else uses real GitHub
 - **OS-Level Sandboxing**: Uses Bubblewrap (Linux) or Seatbelt (macOS) for process isolation
 - **File Operations**: Diff, extract, and inject files between sandbox and host
-- **Network Isolation**: Blocks github.com while allowing other network access
 - **Ephemeral Environments**: Create, use, and destroy environments as needed
 
 ## Installation
@@ -26,60 +26,65 @@ cd amplifier-bundle-shadow
 uv pip install -e ".[dev]"
 ```
 
+### Prerequisites
+
+**Linux:**
+```bash
+# Install bubblewrap
+sudo apt install bubblewrap  # Debian/Ubuntu
+sudo dnf install bubblewrap  # Fedora/RHEL
+```
+
+**macOS:**
+- sandbox-exec is built into macOS (no installation needed)
+
 ## Quick Start
 
 ```bash
-# Create a shadow environment with Amplifier repos
-amplifier-bundle-shadow create microsoft/amplifier microsoft/amplifier-core
+# Create a shadow with your local amplifier-core changes
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
 
-# Execute commands inside the sandbox
-amplifier-bundle-shadow exec shadow-abc123 "uv tool install git+https://github.com/microsoft/amplifier"
-amplifier-bundle-shadow exec shadow-abc123 "amplifier --version"
+# Inside the shadow, install amplifier normally
+# -> amplifier fetches from REAL GitHub
+# -> amplifier-core uses YOUR LOCAL snapshot
+amplifier-shadow exec shadow-abc123 "uv tool install git+https://github.com/microsoft/amplifier"
+
+# Test it
+amplifier-shadow exec shadow-abc123 "amplifier --version"
 
 # See what changed
-amplifier-bundle-shadow diff shadow-abc123
-
-# Extract files from the sandbox
-amplifier-bundle-shadow extract shadow-abc123 /workspace/fix.py ./fix.py
+amplifier-shadow diff shadow-abc123
 
 # Open an interactive shell
-amplifier-bundle-shadow shell shadow-abc123
+amplifier-shadow shell shadow-abc123
 
 # Clean up when done
-amplifier-bundle-shadow destroy shadow-abc123
+amplifier-shadow destroy shadow-abc123
 ```
 
 ## How It Works
 
-### Git URL Rewriting
+### Local Source Snapshots
 
-Inside the sandbox, a custom `.gitconfig` rewrites GitHub URLs:
+When you create a shadow with `--local /path/to/repo:org/name`:
+
+1. Your working directory is snapshotted (including uncommitted changes)
+2. The snapshot becomes a bare git repo inside the sandbox
+3. Git URL rewriting redirects only that specific repo to the local snapshot
+4. All other repos fetch from real GitHub normally
+
+### Selective Git URL Rewriting
+
+Inside the sandbox, `.gitconfig` rewrites URLs only for your local sources:
 
 ```
-[url "file:///repos/github.com/"]
-    insteadOf = https://github.com/
+[url "file:///repos/microsoft/amplifier-core.git"]
+    insteadOf = https://github.com/microsoft/amplifier-core
 ```
 
-This means when you run:
-```bash
-uv tool install git+https://github.com/microsoft/amplifier
-```
-
-Git actually clones from:
-```bash
-file:///repos/github.com/microsoft/amplifier.git
-```
-
-### Network Isolation
-
-A custom `/etc/hosts` file blocks GitHub domains:
-```
-127.0.0.1 github.com
-127.0.0.1 api.github.com
-127.0.0.1 raw.githubusercontent.com
-```
-
-Other network access (PyPI, web, etc.) remains available.
+This means:
+- `git clone https://github.com/microsoft/amplifier-core` → uses your local snapshot
+- `git clone https://github.com/microsoft/amplifier` → fetches from real GitHub
 
 ### Sandbox Backends
 
@@ -92,7 +97,7 @@ Other network access (PyPI, web, etc.) remains available.
 
 | Command | Description |
 |---------|-------------|
-| `create` | Create a new shadow environment |
+| `create` | Create a new shadow environment with local sources |
 | `exec` | Execute a command inside a shadow |
 | `shell` | Open interactive shell in shadow |
 | `list` | List all shadow environments |
@@ -106,51 +111,46 @@ Other network access (PyPI, web, etc.) remains available.
 
 ## Use Cases
 
-### Testing Feature Branches
+### Testing Local Changes
 
 ```bash
-# Create shadow with your feature branch
-amplifier-bundle-shadow create microsoft/amplifier-core@my-feature
+# You're working on amplifier-core and want to test the full install flow
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name test-core
 
-# Test the full install flow
-amplifier-bundle-shadow exec shadow-xxx "uv tool install git+https://github.com/microsoft/amplifier"
+# Install amplifier - it will use your local amplifier-core changes
+amplifier-shadow exec test-core "uv tool install git+https://github.com/microsoft/amplifier"
+
+# Run tests or use amplifier
+amplifier-shadow exec test-core "amplifier run"
 ```
 
 ### Testing Multi-Repo Changes
 
 ```bash
-# Create shadow with multiple repos
-amplifier-bundle-shadow create \
-    microsoft/amplifier@main \
-    microsoft/amplifier-core@fix-branch \
-    microsoft/amplifier-foundation@main
+# Testing changes across multiple repos
+amplifier-shadow create \
+    --local ~/repos/amplifier-core:microsoft/amplifier-core \
+    --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
+    --name multi-test
 
-# Inject your local changes
-amplifier-bundle-shadow inject shadow-xxx ./my-fix.py /workspace/amplifier-core/src/fix.py
-
-# Test
-amplifier-bundle-shadow exec shadow-xxx "cd /workspace && pytest"
+# Both local sources will be used, amplifier itself fetches from GitHub
+amplifier-shadow exec multi-test "uv tool install git+https://github.com/microsoft/amplifier"
 ```
 
-### Validating Fixes
+### Interactive Development
 
 ```bash
-# After making changes in one shadow, extract them
-amplifier-bundle-shadow extract shadow-old /workspace/src/fix.py ./fix.py
+# Open a shell for interactive testing
+amplifier-shadow shell test-env
 
-# Create fresh shadow and inject for clean validation
-amplifier-bundle-shadow create microsoft/amplifier --name validation
-amplifier-bundle-shadow inject validation ./fix.py /workspace/src/fix.py
-amplifier-bundle-shadow exec validation "pytest"
+# Inside the shadow shell:
+$ uv tool install git+https://github.com/microsoft/amplifier
+$ amplifier --version
+$ exit
+
+# Back on host - extract any files you created
+amplifier-shadow extract test-env /workspace/notes.txt ./notes.txt
 ```
-
-## Requirements
-
-### Linux
-- Bubblewrap (`apt install bubblewrap` or `dnf install bubblewrap`)
-
-### macOS
-- sandbox-exec (built into macOS)
 
 ## Contributing
 

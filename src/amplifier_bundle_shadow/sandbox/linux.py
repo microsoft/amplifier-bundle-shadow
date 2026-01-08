@@ -18,7 +18,7 @@ class BubblewrapBackend(SandboxBackend):
     Uses bwrap to create isolated namespaces with:
     - Read-only system directories
     - Writable workspace and home directories
-    - Custom /etc/hosts to block github.com
+    - Local repo mounts with selective git URL rewriting
     - Optional network isolation
     """
     
@@ -45,12 +45,12 @@ class BubblewrapBackend(SandboxBackend):
             if Path(d).exists():
                 args.extend(["--ro-bind", d, d])
         
-        # /etc is special - we bind it but override hosts
+        # /etc is special - we bind it read-only
         args.extend(["--ro-bind", "/etc", "/etc"])
         
-        # Override /etc/hosts with our custom version that blocks github.com
-        if self.hosts_file.exists():
-            args.extend(["--bind", str(self.hosts_file), "/etc/hosts"])
+        # /run is needed for DNS resolution (resolv.conf is often a symlink to /run/...)
+        if Path("/run").exists():
+            args.extend(["--ro-bind", "/run", "/run"])
         
         # Writable workspace directory
         args.extend(["--bind", str(self.workspace_dir), "/workspace"])

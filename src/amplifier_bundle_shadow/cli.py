@@ -44,7 +44,11 @@ def main(ctx: click.Context, shadow_home: Path | None) -> None:
 
 
 @main.command()
-@click.argument("repos", nargs=-1, required=True)
+@click.option(
+    "--local", "-l",
+    multiple=True,
+    help="Local source mapping: /path/to/repo:org/name (can be repeated)",
+)
 @click.option("--name", "-n", help="Name for the environment (auto-generated if not provided)")
 @click.option(
     "--mode", "-m",
@@ -53,39 +57,53 @@ def main(ctx: click.Context, shadow_home: Path | None) -> None:
     help="Sandbox mode (default: auto-detect). Use 'direct' for minimal isolation.",
 )
 @click.option("--no-network", is_flag=True, help="Disable network access entirely")
-@click.option("--no-update", is_flag=True, help="Don't fetch updates for cached repos")
 @click.pass_context
 def create(
     ctx: click.Context,
-    repos: tuple[str, ...],
+    local: tuple[str, ...],
     name: str | None,
     mode: str,
     no_network: bool,
-    no_update: bool,
 ) -> None:
     """
-    Create a new shadow environment with the specified repositories.
+    Create a new shadow environment with local source overrides.
     
-    REPOS: One or more repository specs (e.g., microsoft/amplifier, org/repo@branch)
+    Local sources are snapshots of your working directory (including uncommitted
+    changes) that will be used instead of fetching from GitHub when those repos
+    are referenced as git dependencies.
     
     Examples:
     
-        amplifier-shadow create microsoft/amplifier
+        # Create shadow with local amplifier-core
+        amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
         
-        amplifier-shadow create microsoft/amplifier microsoft/amplifier-core --name test-env
+        # Multiple local sources
+        amplifier-shadow create \\
+            --local ~/repos/amplifier-core:microsoft/amplifier-core \\
+            --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \\
+            --name test-env
         
-        amplifier-shadow create microsoft/amplifier@feature-branch
+        # Then test inside the shadow:
+        amplifier-shadow exec test-env "uv tool install git+https://github.com/microsoft/amplifier"
+        # -> amplifier fetches from real GitHub
+        # -> amplifier-core/foundation use your local snapshots
     """
     manager: ShadowManager = ctx.obj["manager"]
+    
+    if not local:
+        error_console.print("[red]Error:[/red] At least one --local source is required")
+        error_console.print()
+        error_console.print("Example:")
+        error_console.print("  amplifier-shadow create --local ~/repos/myrepo:org/myrepo")
+        sys.exit(1)
     
     with console.status("[bold blue]Creating shadow environment..."):
         try:
             env = run_async(manager.create(
-                repos=list(repos),
+                local_sources=list(local),
                 name=name,
                 mode=mode,
                 network_enabled=not no_network,
-                update_repos=not no_update,
             ))
         except Exception as e:
             error_console.print(f"[red]Error:[/red] {e}")
@@ -95,10 +113,12 @@ def create(
     console.print("[green]Shadow environment ready![/green]")
     console.print(f"  ID: [bold]{env.shadow_id}[/bold]")
     console.print(f"  Mode: {env.backend.name}")
-    console.print(f"  Repos: {', '.join(r.display_name for r in env.repos)}")
+    console.print(f"  Local sources:")
+    for r in env.repos:
+        console.print(f"    - {r.full_name} <- {r.local_path}")
     console.print()
     console.print("Next steps:")
-    console.print(f"  [dim]amplifier-shadow exec {env.shadow_id} \"<command>\"[/dim]")
+    console.print(f"  [dim]amplifier-shadow exec {env.shadow_id} \"uv tool install git+https://github.com/...\"[/dim]")
     console.print(f"  [dim]amplifier-shadow shell {env.shadow_id}[/dim]")
 
 

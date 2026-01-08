@@ -14,14 +14,8 @@ from .repos import RepoManager
 from .sandbox import get_sandbox_backend
 
 
-# Template for .gitconfig that rewrites GitHub URLs
-GITCONFIG_TEMPLATE = """
-[url "file:///repos/github.com/"]
-    insteadOf = https://github.com/
-    insteadOf = git@github.com:
-    insteadOf = ssh://git@github.com/
-    insteadOf = git+https://github.com/
-
+# Base gitconfig template (repo-specific URL rewrites added dynamically)
+GITCONFIG_BASE = """
 [user]
     name = Shadow Environment
     email = shadow@localhost
@@ -34,19 +28,6 @@ GITCONFIG_TEMPLATE = """
 
 [advice]
     detachedHead = false
-"""
-
-# Template for /etc/hosts that blocks GitHub
-HOSTS_TEMPLATE = """
-# Shadow environment - block real GitHub
-127.0.0.1 github.com
-127.0.0.1 www.github.com
-127.0.0.1 api.github.com
-127.0.0.1 raw.githubusercontent.com
-127.0.0.1 gist.github.com
-127.0.0.1 codeload.github.com
-127.0.0.1 objects.githubusercontent.com
-127.0.0.1 avatars.githubusercontent.com
 """
 
 
@@ -84,25 +65,37 @@ class ShadowManager:
     
     async def create(
         self,
-        repos: list[str],
+        local_sources: list[str] | None = None,
         name: str | None = None,
         mode: str = "auto",
         network_enabled: bool = True,
-        update_repos: bool = True,
     ) -> ShadowEnvironment:
         """
-        Create a new shadow environment.
+        Create a new shadow environment with local source overrides.
         
         Args:
-            repos: List of repository specs (e.g., 'microsoft/amplifier')
+            local_sources: List of local source mappings (e.g., '~/repos/amplifier-core:microsoft/amplifier-core')
             name: Optional name for the environment. Auto-generated if not provided.
-            mode: Sandbox mode - "auto", "bubblewrap", or "seatbelt"
-            network_enabled: Whether to allow network access (except github.com)
-            update_repos: Whether to fetch latest from GitHub for cached repos
+            mode: Sandbox mode - "auto", "bubblewrap", "seatbelt", or "direct"
+            network_enabled: Whether to allow network access
             
         Returns:
             A new ShadowEnvironment ready for use
+            
+        Example:
+            # Create shadow with local amplifier-core, other deps fetch from real GitHub
+            await manager.create(
+                local_sources=['~/repos/amplifier-core:microsoft/amplifier-core'],
+                name='test-my-changes',
+            )
+            
+            # Then inside the shadow:
+            # uv tool install git+https://github.com/microsoft/amplifier
+            # -> amplifier fetches from real GitHub
+            # -> amplifier-core (dependency) uses your local snapshot
         """
+        local_sources = local_sources or []
+        
         # Generate shadow ID
         shadow_id = name or f"shadow-{uuid.uuid4().hex[:6]}"
         shadow_dir = self.environments_dir / shadow_id
@@ -122,17 +115,15 @@ class ShadowManager:
         repos_dir = shadow_dir / "repos" / "github.com"
         repos_dir.mkdir(parents=True)
         
-        # Parse repo specs
-        repo_specs = [RepoSpec.parse(r) for r in repos]
+        # Parse local source specs
+        repo_specs = [RepoSpec.parse_local(ls) for ls in local_sources]
         
-        # Stage and create bare repos
+        # Create bare repos from local sources (snapshots working directory state)
         for spec in repo_specs:
-            await self.repo_manager.ensure_staged(spec, update=update_repos)
-            await self.repo_manager.create_bare_repo(spec, repos_dir)
+            await self.repo_manager.create_bare_from_local(spec, repos_dir)
         
         # Write configuration files
-        self._write_gitconfig(shadow_dir)
-        self._write_hosts(shadow_dir)
+        self._write_gitconfig(shadow_dir, repo_specs)
         self._write_metadata(shadow_dir, shadow_id, repo_specs, mode)
         
         # Get sandbox backend
@@ -231,45 +222,36 @@ class ShadowManager:
         
         return count
     
-    def _write_gitconfig(self, shadow_dir: Path) -> None:
-        """Write the .gitconfig file for the shadow environment."""
+    def _write_gitconfig(self, shadow_dir: Path, local_repos: list[RepoSpec]) -> None:
+        """
+        Write the .gitconfig file for the shadow environment.
+        
+        Only rewrites URLs for repos that have local sources staged.
+        Other repos fetch from real GitHub.
+        
+        Note: The sandbox mounts repos/github.com to /repos, so paths inside
+        the sandbox are /repos/{org}/{name}.git (no github.com in path).
+        """
         gitconfig_path = shadow_dir / "home" / ".gitconfig"
-        repos_path = shadow_dir / "repos" / "github.com"
         
-        # Generate gitconfig with actual path for this environment
-        gitconfig_content = f'''[url "file://{repos_path}/"]
-    insteadOf = https://github.com/
-    insteadOf = git@github.com:
-    insteadOf = ssh://git@github.com/
-    insteadOf = git+https://github.com/
-
-[user]
-    name = Shadow Environment
-    email = shadow@localhost
-
-[init]
-    defaultBranch = main
-
-[safe]
-    directory = *
-
-[advice]
-    detachedHead = false
-'''
-        gitconfig_path.write_text(gitconfig_content)
-    
-    def _write_hosts(self, shadow_dir: Path) -> None:
-        """Write the custom /etc/hosts file."""
-        hosts_path = shadow_dir / "hosts"
+        # Start with base config
+        gitconfig_lines = [GITCONFIG_BASE.strip()]
         
-        # Start with system hosts file
-        try:
-            system_hosts = Path("/etc/hosts").read_text()
-        except OSError:
-            system_hosts = "127.0.0.1 localhost\n"
+        # Add URL rewriting ONLY for local source repos
+        # Path inside sandbox: /repos/{org}/{name}.git (sandbox mounts repos/github.com -> /repos)
+        for spec in local_repos:
+            sandbox_bare_path = f"/repos/{spec.org}/{spec.name}.git"
+            gitconfig_lines.append(f'''
+[url "file://{sandbox_bare_path}"]
+    insteadOf = https://github.com/{spec.org}/{spec.name}
+    insteadOf = https://github.com/{spec.org}/{spec.name}.git
+    insteadOf = git@github.com:{spec.org}/{spec.name}
+    insteadOf = git@github.com:{spec.org}/{spec.name}.git
+    insteadOf = ssh://git@github.com/{spec.org}/{spec.name}
+    insteadOf = git+https://github.com/{spec.org}/{spec.name}
+''')
         
-        # Add our GitHub blocks
-        hosts_path.write_text(system_hosts + HOSTS_TEMPLATE)
+        gitconfig_path.write_text("\n".join(gitconfig_lines))
     
     def _write_metadata(
         self,
@@ -279,9 +261,17 @@ class ShadowManager:
         mode: str,
     ) -> None:
         """Write metadata file for the shadow environment."""
+        # Store both simple names and local source info
+        local_sources = []
+        for r in repos:
+            source_info = {"repo": r.full_name}
+            if r.local_path:
+                source_info["local_path"] = str(r.local_path)
+            local_sources.append(source_info)
+        
         metadata = {
             "shadow_id": shadow_id,
-            "repos": [r.display_name for r in repos],
+            "local_sources": local_sources,
             "mode": mode,
             "created_at": datetime.now().isoformat(),
         }
@@ -305,8 +295,17 @@ class ShadowManager:
         except (json.JSONDecodeError, OSError):
             return None
         
-        # Parse repos
-        repo_specs = [RepoSpec.parse(r) for r in metadata.get("repos", [])]
+        # Parse repos from local_sources format
+        repo_specs = []
+        for source_info in metadata.get("local_sources", []):
+            if isinstance(source_info, dict):
+                spec = RepoSpec.parse(source_info["repo"])
+                if "local_path" in source_info:
+                    spec.local_path = Path(source_info["local_path"])
+                repo_specs.append(spec)
+            elif isinstance(source_info, str):
+                # Legacy format fallback
+                repo_specs.append(RepoSpec.parse(source_info))
         
         # Get backend
         repos_dir = shadow_dir / "repos" / "github.com"
