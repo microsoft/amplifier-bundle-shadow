@@ -38,6 +38,8 @@ RUN chmod +x /entrypoint.sh
 ENV HOME=/home/amplifier
 ENV GITEA_WORK_DIR=/var/lib/gitea
 ENV USER=amplifier
+# Include uv tool bin directory in PATH so installed tools are immediately usable
+ENV PATH="/home/amplifier/.local/bin:${PATH}"
 
 # Run as amplifier user
 USER amplifier
