@@ -13,11 +13,12 @@ from .environment import ShadowEnvironment
 from .gitea import GiteaClient
 from .models import RepoSpec, ShadowStatus
 from .snapshot import SnapshotManager
+from .builder import ImageBuilder, DEFAULT_IMAGE_NAME
 
-__all__ = ["ShadowManager"]
+__all__ = ["ShadowManager", "DEFAULT_IMAGE"]
 
-# Default shadow container image
-DEFAULT_IMAGE = "ghcr.io/microsoft/amplifier-shadow:latest"
+# Default shadow container image (local build)
+DEFAULT_IMAGE = DEFAULT_IMAGE_NAME
 
 
 class ShadowManager:
@@ -102,6 +103,20 @@ class ShadowManager:
                     org=spec.org,
                     name=spec.name,
                 )
+        
+        # Ensure image exists (auto-build if needed)
+        builder = ImageBuilder(self.runtime)
+        try:
+            image = await builder.ensure_image(image)
+        except FileNotFoundError as e:
+            shutil.rmtree(shadow_dir)
+            raise RuntimeError(
+                f"Cannot build image: {e}. "
+                "Run 'amplifier-shadow build' manually or specify --image."
+            ) from e
+        except Exception as e:
+            shutil.rmtree(shadow_dir)
+            raise RuntimeError(f"Failed to build image: {e}") from e
         
         # Start container
         mounts = [
@@ -269,8 +284,9 @@ class ShadowManager:
             ]
             
             for pattern in patterns:
+                # Use --add to allow multiple insteadOf values for the same URL
                 commands.append(
-                    f'git config --global url."{gitea_url}".insteadOf "{pattern}"'
+                    f'git config --global --add url."{gitea_url}".insteadOf "{pattern}"'
                 )
         
         # Execute all commands

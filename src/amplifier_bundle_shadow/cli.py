@@ -397,5 +397,64 @@ def destroy_all(ctx: click.Context, force: bool) -> None:
     console.print(f"[green]Destroyed {count} environment(s)[/green]")
 
 
+@main.command()
+@click.option(
+    "--tag", "-t",
+    default=None,
+    help="Image tag (default: amplifier-shadow:local)",
+)
+@click.option("--force", "-f", is_flag=True, help="Rebuild even if image exists")
+@click.pass_context
+def build(ctx: click.Context, tag: str | None, force: bool) -> None:
+    """
+    Build the shadow container image locally.
+    
+    Builds the container image from bundled Dockerfile without needing
+    to pull from a registry. The image is built locally and tagged
+    as 'amplifier-shadow:local' by default.
+    
+    Examples:
+    
+        # Build with default tag
+        shadow build
+        
+        # Build with custom tag
+        shadow build --tag my-shadow:v1
+        
+        # Force rebuild
+        shadow build --force
+    """
+    from .builder import ImageBuilder, DEFAULT_IMAGE_NAME
+    
+    image_tag = tag or DEFAULT_IMAGE_NAME
+    builder = ImageBuilder()
+    
+    # Check if image exists
+    if not force and run_async(builder.image_exists(image_tag)):
+        console.print(f"[yellow]Image already exists:[/yellow] {image_tag}")
+        console.print("[dim]Use --force to rebuild[/dim]")
+        return
+    
+    console.print(f"[bold blue]Building image:[/bold blue] {image_tag}")
+    console.print()
+    
+    def progress(line: str) -> None:
+        # Filter noisy docker build output
+        if line.startswith("#") or "--->" in line or "Removing" in line:
+            console.print(f"[dim]{line}[/dim]")
+        elif "Successfully" in line or "DONE" in line:
+            console.print(f"[green]{line}[/green]")
+        elif "ERROR" in line or "error" in line.lower():
+            console.print(f"[red]{line}[/red]")
+    
+    try:
+        run_async(builder.build(image_tag, progress_callback=progress))
+        console.print()
+        console.print(f"[green]Successfully built:[/green] {image_tag}")
+    except Exception as e:
+        error_console.print(f"[red]Build failed:[/red] {e}")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
