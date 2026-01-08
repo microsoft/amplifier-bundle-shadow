@@ -101,12 +101,9 @@ class SeatbeltBackend(SandboxBackend):
     (subpath "/private/var/folders")
 )
 
-;; Network access (limited)
+;; Network access (full - URL rewriting handles local source redirection)
 (allow network-outbound)
 (allow network-inbound)
-
-;; Deny network to github.com (handled via /etc/hosts instead)
-;; Seatbelt network filtering by hostname is unreliable, so we rely on hosts file
 '''
         return profile
     

@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from amplifier_bundle_shadow.manager import ShadowManager, GITCONFIG_TEMPLATE, HOSTS_TEMPLATE
+from amplifier_bundle_shadow.manager import ShadowManager, GITCONFIG_BASE
 from amplifier_bundle_shadow.models import RepoSpec, ShadowStatus
 
 
@@ -54,35 +54,26 @@ class TestShadowManager:
         assert count == 0
     
     def test_write_gitconfig(self, manager, temp_shadow_home):
-        """Test _write_gitconfig creates correct file."""
+        """Test _write_gitconfig creates correct file with URL rewrites."""
         shadow_dir = temp_shadow_home / "environments" / "test"
         shadow_dir.mkdir(parents=True)
         (shadow_dir / "home").mkdir()
-        (shadow_dir / "repos" / "github.com").mkdir(parents=True)
+        (shadow_dir / "repos" / "microsoft").mkdir(parents=True)
         
-        manager._write_gitconfig(shadow_dir)
+        # Create a local repo spec
+        local_repos = [
+            RepoSpec(org="microsoft", name="amplifier-core", local_path=Path("/tmp/amplifier-core"))
+        ]
+        
+        manager._write_gitconfig(shadow_dir, local_repos)
         
         gitconfig_path = shadow_dir / "home" / ".gitconfig"
         assert gitconfig_path.exists()
         
         content = gitconfig_path.read_text()
-        assert 'insteadOf = https://github.com/' in content
-        # The gitconfig should contain the actual path to the repos directory
-        assert f'file://{shadow_dir}/repos/github.com/' in content
-    
-    def test_write_hosts(self, manager, temp_shadow_home):
-        """Test _write_hosts creates correct file."""
-        shadow_dir = temp_shadow_home / "environments" / "test"
-        shadow_dir.mkdir(parents=True)
-        
-        manager._write_hosts(shadow_dir)
-        
-        hosts_path = shadow_dir / "hosts"
-        assert hosts_path.exists()
-        
-        content = hosts_path.read_text()
-        assert '127.0.0.1 github.com' in content
-        assert '127.0.0.1 api.github.com' in content
+        # Should have URL rewrite for the specific repo
+        assert 'insteadOf = https://github.com/microsoft/amplifier-core' in content
+        assert f'file://{shadow_dir}/repos/microsoft/amplifier-core.git' in content
     
     @pytest.mark.asyncio
     async def test_create_duplicate_raises(self, manager):
@@ -91,22 +82,16 @@ class TestShadowManager:
         shadow_dir.mkdir(parents=True)
         
         with pytest.raises(ValueError) as exc_info:
-            await manager.create(repos=["microsoft/amplifier"], name="test-dup")
+            await manager.create(local_sources=["/tmp/test:microsoft/amplifier"], name="test-dup")
         
         assert "already exists" in str(exc_info.value)
 
 
-class TestShadowManagerTemplates:
-    """Tests for template content."""
+class TestGitconfigBase:
+    """Tests for GITCONFIG_BASE content."""
     
-    def test_gitconfig_template_has_url_rewrite(self):
-        """Test GITCONFIG_TEMPLATE has URL rewrite rules."""
-        assert 'insteadOf = https://github.com/' in GITCONFIG_TEMPLATE
-        assert 'insteadOf = git@github.com:' in GITCONFIG_TEMPLATE
-        assert 'file:///repos/github.com/' in GITCONFIG_TEMPLATE
-    
-    def test_hosts_template_blocks_github(self):
-        """Test HOSTS_TEMPLATE blocks GitHub domains."""
-        assert '127.0.0.1 github.com' in HOSTS_TEMPLATE
-        assert '127.0.0.1 api.github.com' in HOSTS_TEMPLATE
-        assert '127.0.0.1 raw.githubusercontent.com' in HOSTS_TEMPLATE
+    def test_gitconfig_base_has_user_config(self):
+        """Test GITCONFIG_BASE has basic git user config."""
+        assert '[user]' in GITCONFIG_BASE
+        assert 'name = Shadow Environment' in GITCONFIG_BASE
+        assert 'email = shadow@localhost' in GITCONFIG_BASE

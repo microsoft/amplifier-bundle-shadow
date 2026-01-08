@@ -29,8 +29,8 @@ class SandboxBackend(ABC):
         
         Args:
             shadow_dir: Directory containing this shadow environment's files
-            repos_dir: Directory containing bare git repos
-            network_enabled: Whether to allow network access (except github.com)
+            repos_dir: Directory containing local source snapshots as bare git repos
+            network_enabled: Whether to allow network access
         """
         self.shadow_dir = shadow_dir
         self.repos_dir = repos_dir
@@ -39,7 +39,6 @@ class SandboxBackend(ABC):
         # Standard paths within the shadow environment
         self.workspace_dir = shadow_dir / "workspace"
         self.home_dir = shadow_dir / "home"
-        self.hosts_file = shadow_dir / "hosts"
         self.gitconfig_file = shadow_dir / "home" / ".gitconfig"
     
     @abstractmethod

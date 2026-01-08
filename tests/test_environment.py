@@ -29,7 +29,7 @@ class TestShadowEnvironment:
         shadow_dir = tmp_path / "shadow-test"
         (shadow_dir / "workspace").mkdir(parents=True)
         (shadow_dir / "home").mkdir()
-        (shadow_dir / "repos" / "github.com").mkdir(parents=True)
+        (shadow_dir / "repos" / "microsoft").mkdir(parents=True)
         return shadow_dir
     
     @pytest.fixture
@@ -53,7 +53,7 @@ class TestShadowEnvironment:
     
     def test_repos_dir(self, environment, temp_shadow_dir):
         """Test repos_dir property."""
-        assert environment.repos_dir == temp_shadow_dir / "repos" / "github.com"
+        assert environment.repos_dir == temp_shadow_dir / "repos"
     
     def test_to_info(self, environment):
         """Test to_info returns correct data."""

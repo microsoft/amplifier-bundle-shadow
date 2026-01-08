@@ -20,7 +20,7 @@ error_console = Console(stderr=True)
 
 def run_async(coro):
     """Run an async coroutine in a sync context."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 @click.group()

@@ -306,7 +306,7 @@ class ShadowTool:
                 error=None,
             )
         except ValueError as e:
-            return ToolResult(output=None, error=str(e))
+            return ToolResult(output=None, error={"message": str(e)})
 
 
 async def mount(coordinator, config: dict[str, Any] | None = None):
