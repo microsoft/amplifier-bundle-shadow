@@ -273,14 +273,23 @@ class ShadowManager:
         for spec in local_repos:
             gitea_url = f"http://shadow:shadow@localhost:3000/{spec.org}/{spec.name}.git"
             
-            # Rewrite various GitHub URL formats
+            # Rewrite various GitHub URL formats to local Gitea
+            # IMPORTANT: git insteadOf uses PREFIX matching, so we need variants
+            # to handle trailing slashes and different URL formats that tools use
             patterns = [
+                # HTTPS variants (most common for uv/pip/cargo)
                 f"https://github.com/{spec.org}/{spec.name}",
+                f"https://github.com/{spec.org}/{spec.name}/",  # Trailing slash
                 f"https://github.com/{spec.org}/{spec.name}.git",
+                f"https://github.com/{spec.org}/{spec.name}.git/",
+                # SSH variants  
                 f"git@github.com:{spec.org}/{spec.name}",
                 f"git@github.com:{spec.org}/{spec.name}.git",
                 f"ssh://git@github.com/{spec.org}/{spec.name}",
+                f"ssh://git@github.com/{spec.org}/{spec.name}.git",
+                # git+ prefix variants (used in pyproject.toml dependencies)
                 f"git+https://github.com/{spec.org}/{spec.name}",
+                f"git+ssh://git@github.com/{spec.org}/{spec.name}",
             ]
             
             for pattern in patterns:
@@ -289,9 +298,43 @@ class ShadowManager:
                     f'git config --global --add url."{gitea_url}".insteadOf "{pattern}"'
                 )
         
+        # Clear uv's git cache to ensure fresh resolution with new URL rules
+        # This prevents stale cached URLs from bypassing insteadOf rewriting
+        commands.append('rm -rf /home/amplifier/.cache/uv/git-v0 2>/dev/null || true')
+        
         # Execute all commands
         for cmd in commands:
             await self.runtime.exec(container, cmd)
+        
+        # Verify the configuration was applied correctly
+        await self._verify_git_rewriting(container, local_repos)
+    
+    async def _verify_git_rewriting(
+        self,
+        container: str,
+        local_repos: list[RepoSpec],
+    ) -> None:
+        """Verify git URL rewriting is configured correctly."""
+        # Check that git config has our insteadOf rules
+        code, stdout, stderr = await self.runtime.exec(
+            container, 
+            'git config --global --get-regexp "url.*insteadOf"'
+        )
+        
+        if code != 0:
+            raise RuntimeError(
+                f"Git URL rewriting configuration failed. "
+                f"No insteadOf rules found in git config. stderr: {stderr}"
+            )
+        
+        # Verify each repo has URL rewriting configured
+        for spec in local_repos:
+            expected_pattern = f"https://github.com/{spec.org}/{spec.name}"
+            if expected_pattern not in stdout:
+                raise RuntimeError(
+                    f"Git URL rewriting not configured for {spec.full_name}. "
+                    f"Expected pattern '{expected_pattern}' not found in git config."
+                )
     
     def _write_metadata(
         self,

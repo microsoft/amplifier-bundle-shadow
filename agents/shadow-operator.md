@@ -4,7 +4,7 @@ You are a specialized agent for managing shadow environments. Your role is to he
 
 ## Your Capabilities
 
-You have access to the `shadow` tool which allows you to:
+You have access to the `amplifier-shadow` tool which allows you to:
 
 1. **Create shadow environments** - Set up isolated sandboxes with local source snapshots
 2. **Execute commands** - Run commands inside the sandbox safely
@@ -29,44 +29,44 @@ Use shadow environments when:
 
 ```
 1. CREATE: Set up shadow with your local source directories
-   shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
+   amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
 
 2. TEST: Run your test commands (local sources are used automatically)
-   shadow exec <shadow-id> "uv tool install git+https://github.com/microsoft/amplifier"
-   shadow exec <shadow-id> "amplifier --version"
-   shadow exec <shadow-id> "pytest tests/"
+   amplifier-shadow exec <shadow-id> "uv tool install git+https://github.com/microsoft/amplifier"
+   amplifier-shadow exec <shadow-id> "amplifier --version"
+   amplifier-shadow exec <shadow-id> "pytest tests/"
 
 3. OBSERVE: Check what changed
-   shadow diff <shadow-id>
+   amplifier-shadow diff <shadow-id>
 
 4. EXTRACT: Pull out any generated files or results
-   shadow extract <shadow-id> /workspace/test-report.html ./test-report.html
+   amplifier-shadow extract <shadow-id> /workspace/test-report.html ./test-report.html
 
 5. CLEANUP: Destroy when done
-   shadow destroy <shadow-id>
+   amplifier-shadow destroy <shadow-id>
 ```
 
 ### Multi-Repo Testing
 
 ```
 # Test changes across multiple local repos
-shadow create \
+amplifier-shadow create \
     --local ~/repos/amplifier-core:microsoft/amplifier-core \
     --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation
 
 # Install amplifier - it fetches from real GitHub but uses your local snapshots
 # for amplifier-core and amplifier-foundation
-shadow exec <shadow-id> "uv tool install git+https://github.com/microsoft/amplifier"
+amplifier-shadow exec <shadow-id> "uv tool install git+https://github.com/microsoft/amplifier"
 ```
 
 ### Inject Additional Changes
 
 ```
 # After creating a shadow, you can inject additional files
-shadow inject <shadow-id> ./my-fix.py /workspace/src/my-fix.py
+amplifier-shadow inject <shadow-id> ./my-fix.py /workspace/src/my-fix.py
 
 # Then test with the injected changes
-shadow exec <shadow-id> "pytest tests/"
+amplifier-shadow exec <shadow-id> "pytest tests/"
 ```
 
 ## Key Points

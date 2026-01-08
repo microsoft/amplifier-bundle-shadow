@@ -72,16 +72,16 @@ def create(
     Examples:
     
         # Create shadow with local amplifier-core
-        shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
+        amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
         
         # Multiple local sources
-        shadow create \\
+        amplifier-shadow create \\
             --local ~/repos/amplifier-core:microsoft/amplifier-core \\
             --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \\
             --name test-env
         
         # Then test inside the shadow:
-        shadow exec test-env "uv pip install git+https://github.com/microsoft/amplifier"
+        amplifier-shadow exec test-env "uv pip install git+https://github.com/microsoft/amplifier"
         # -> amplifier-core/foundation use your local snapshots
     """
     manager: ShadowManager = ctx.obj["manager"]
@@ -90,7 +90,7 @@ def create(
         error_console.print("[red]Error:[/red] At least one --local source is required")
         error_console.print()
         error_console.print("Example:")
-        error_console.print("  shadow create --local ~/repos/myrepo:org/myrepo")
+        error_console.print("  amplifier-shadow create --local ~/repos/myrepo:org/myrepo")
         sys.exit(1)
     
     with console.status("[bold blue]Creating shadow environment..."):
@@ -113,8 +113,8 @@ def create(
         console.print(f"    - {r.full_name} <- {r.local_path}")
     console.print()
     console.print("Next steps:")
-    console.print(f"  [dim]shadow exec {env.shadow_id} \"uv pip install git+https://github.com/...\"[/dim]")
-    console.print(f"  [dim]shadow shell {env.shadow_id}[/dim]")
+    console.print(f"  [dim]amplifier-shadow exec {env.shadow_id} \"uv pip install git+https://github.com/...\"[/dim]")
+    console.print(f"  [dim]amplifier-shadow shell {env.shadow_id}[/dim]")
 
 
 @main.command()
@@ -132,9 +132,9 @@ def exec(ctx: click.Context, shadow_id: str, command: str, timeout: int) -> None
     
     Examples:
     
-        shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
+        amplifier-shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
         
-        shadow exec shadow-abc123 "amplifier --version"
+        amplifier-shadow exec shadow-abc123 "amplifier --version"
     """
     manager: ShadowManager = ctx.obj["manager"]
     
@@ -170,7 +170,7 @@ def shell(ctx: click.Context, shadow_id: str) -> None:
     
     Example:
     
-        shadow shell shadow-abc123
+        amplifier-shadow shell shadow-abc123
     """
     manager: ShadowManager = ctx.obj["manager"]
     
@@ -299,7 +299,7 @@ def extract(ctx: click.Context, shadow_id: str, container_path: str, host_path: 
     
     Example:
     
-        shadow extract shadow-abc123 /workspace/src/fix.py ./fix.py
+        amplifier-shadow extract shadow-abc123 /workspace/src/fix.py ./fix.py
     """
     manager: ShadowManager = ctx.obj["manager"]
     
@@ -336,7 +336,7 @@ def inject(ctx: click.Context, shadow_id: str, host_path: str, container_path: s
     
     Example:
     
-        shadow inject shadow-abc123 ./fix.py /workspace/src/fix.py
+        amplifier-shadow inject shadow-abc123 ./fix.py /workspace/src/fix.py
     """
     manager: ShadowManager = ctx.obj["manager"]
     
@@ -416,13 +416,13 @@ def build(ctx: click.Context, tag: str | None, force: bool) -> None:
     Examples:
     
         # Build with default tag
-        shadow build
+        amplifier-shadow build
         
         # Build with custom tag
-        shadow build --tag my-shadow:v1
+        amplifier-shadow build --tag my-shadow:v1
         
         # Force rebuild
-        shadow build --force
+        amplifier-shadow build --force
     """
     from .builder import ImageBuilder, DEFAULT_IMAGE_NAME
     

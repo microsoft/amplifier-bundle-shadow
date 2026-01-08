@@ -46,24 +46,24 @@ The shadow tool will automatically detect and use podman if available, falling b
 
 ```bash
 # Create a shadow with your local amplifier-core changes
-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
 
 # Inside the shadow, install amplifier normally
 # -> amplifier fetches from REAL GitHub
 # -> amplifier-core uses YOUR LOCAL snapshot
-shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
+amplifier-shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
 
 # Test it
-shadow exec shadow-abc123 "amplifier --version"
+amplifier-shadow exec shadow-abc123 "amplifier --version"
 
 # See what changed
-shadow diff shadow-abc123
+amplifier-shadow diff shadow-abc123
 
 # Open an interactive shell
-shadow shell shadow-abc123
+amplifier-shadow shell shadow-abc123
 
 # Clean up when done
-shadow destroy shadow-abc123
+amplifier-shadow destroy shadow-abc123
 ```
 
 ## How It Works
@@ -141,33 +141,33 @@ This means:
 
 ```bash
 # You're working on amplifier-core and want to test the full install flow
-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name test-core
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name test-core
 
 # Install amplifier - it will use your local amplifier-core changes
-shadow exec test-core "uv pip install git+https://github.com/microsoft/amplifier"
+amplifier-shadow exec test-core "uv pip install git+https://github.com/microsoft/amplifier"
 
 # Run tests or use amplifier
-shadow exec test-core "amplifier run"
+amplifier-shadow exec test-core "amplifier run"
 ```
 
 ### Testing Multi-Repo Changes
 
 ```bash
 # Testing changes across multiple repos
-shadow create \
+amplifier-shadow create \
     --local ~/repos/amplifier-core:microsoft/amplifier-core \
     --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
     --name multi-test
 
 # Both local sources will be used, amplifier itself fetches from GitHub
-shadow exec multi-test "uv pip install git+https://github.com/microsoft/amplifier"
+amplifier-shadow exec multi-test "uv pip install git+https://github.com/microsoft/amplifier"
 ```
 
 ### Interactive Development
 
 ```bash
 # Open a shell for interactive testing
-shadow shell test-env
+amplifier-shadow shell test-env
 
 # Inside the shadow shell:
 $ uv pip install git+https://github.com/microsoft/amplifier
@@ -175,7 +175,7 @@ $ amplifier --version
 $ exit
 
 # Back on host - extract any files you created
-shadow extract test-env /workspace/notes.txt ./notes.txt
+amplifier-shadow extract test-env /workspace/notes.txt ./notes.txt
 ```
 
 ## Contributing

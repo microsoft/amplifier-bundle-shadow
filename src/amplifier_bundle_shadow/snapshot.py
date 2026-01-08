@@ -53,11 +53,20 @@ class SnapshotManager:
         
         If the repository has uncommitted changes, they are captured
         as a "Shadow snapshot" commit on top of HEAD.
+        
+        IMPORTANT: Before creating the snapshot, we fetch all refs from origin
+        to ensure the bundle includes commits that may be pinned in lock files
+        but not yet in the local repo. This prevents "not our ref" errors when
+        uv/pip try to fetch specific commit hashes.
         """
         # Validate it's a git repo
         git_dir = local_path / ".git"
         if not git_dir.exists():
             raise ValueError(f"Not a git repository: {local_path}")
+        
+        # Fetch all from origin to ensure we have all commits that might be
+        # referenced by lock files (prevents "not our ref" errors)
+        await self._fetch_all_refs(local_path)
         
         # Create output directory
         bundle_path = self.get_bundle_path(org, name)
@@ -105,11 +114,31 @@ class SnapshotManager:
                 self.snapshot_dir.mkdir(parents=True, exist_ok=True)
     
     async def _create_simple_bundle(self, repo_path: Path, output_path: Path) -> None:
-        """Create bundle from clean repository."""
-        await self._run_git(
-            repo_path,
-            "bundle", "create", str(output_path), "--all",
-        )
+        """Create bundle from clean repository.
+        
+        IMPORTANT: We bundle ALL refs including remote tracking refs (origin/*)
+        because lock files may pin commits that only exist on origin/main but
+        not on the local main branch. Using just --all only bundles local branches.
+        """
+        # Get all refs to include in the bundle (local + remote tracking)
+        stdout, _ = await self._run_git(repo_path, "show-ref", "--heads", "--tags")
+        refs = [line.split()[1] for line in stdout.strip().split('\n') if line]
+        
+        # Also get remote tracking refs
+        stdout_remotes, _ = await self._run_git(repo_path, "show-ref")
+        for line in stdout_remotes.strip().split('\n'):
+            if line and 'refs/remotes/' in line:
+                refs.append(line.split()[1])
+        
+        if not refs:
+            # Fallback to --all if no refs found
+            await self._run_git(repo_path, "bundle", "create", str(output_path), "--all")
+        else:
+            # Bundle with explicit refs to include remote tracking refs
+            await self._run_git(
+                repo_path,
+                "bundle", "create", str(output_path), *refs,
+            )
     
     async def _create_snapshot_with_changes(
         self,
@@ -165,6 +194,30 @@ class SnapshotManager:
             await self._create_simple_bundle(tmp_repo, output_path)
             
             return commit_sha
+    
+    async def _fetch_all_refs(self, repo_path: Path) -> None:
+        """
+        Fetch all refs from origin to ensure we have all commits.
+        
+        This is important for shadow environments because:
+        - Lock files (uv.lock, package-lock.json) may pin specific commit hashes
+        - Those commits may exist on origin but not in the local clone
+        - Without fetching, "not our ref" errors occur when resolving deps
+        
+        We fetch silently and don't fail if origin doesn't exist (local-only repos).
+        """
+        try:
+            # Fetch all branches and tags from origin
+            proc = await asyncio.create_subprocess_exec(
+                "git", "-C", str(repo_path), "fetch", "--all", "--tags", "--quiet",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.communicate()
+            # Don't check return code - it's OK if fetch fails (offline, no remote, etc.)
+        except Exception:
+            # Silently ignore fetch failures - the local state is still usable
+            pass
     
     async def _run_git(self, cwd: Path, *args: str) -> tuple[str, str]:
         """Run git command and return stdout/stderr."""

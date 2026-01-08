@@ -101,14 +101,36 @@ class GiteaClient:
         name: str,
         bundle_container_path: str,
     ) -> None:
-        """Push a git bundle to a Gitea repository."""
-        # Clone bundle to temp dir, set remote, push
+        """Push a git bundle to a Gitea repository.
+        
+        IMPORTANT: The bundle may contain remote tracking refs (refs/remotes/origin/*)
+        that have commits not in any local branch. We need to push ALL commits so that
+        pinned commit hashes from lock files can be resolved.
+        
+        CHALLENGE: When you `git clone --bare` a bundle:
+        - Only refs/heads/* are created in the clone
+        - refs/remotes/origin/* are DROPPED completely
+        
+        SOLUTION: 
+        1. Parse bundle refs using `git bundle list-heads`
+        2. Create bare repo and fetch each ref explicitly
+        3. Create _upstream_* branches for refs/remotes/origin/* refs
+        4. Push everything to Gitea
+        """
+        # Multi-step approach to handle all refs including remote tracking refs
+        # We parse the bundle's refs and fetch each one explicitly
         commands = f"""
 cd /tmp && rm -rf _push_{name} && \
-git clone {bundle_container_path} _push_{name} && \
-cd _push_{name} && \
-git remote set-url origin http://{self.username}:{self.password}@localhost:3000/{org}/{name}.git && \
-git push -u origin --all --force 2>&1
+mkdir _push_{name} && cd _push_{name} && \
+git init --bare --quiet && \
+git bundle list-heads {bundle_container_path} | while read sha ref; do \
+    branch_name=$(echo "$ref" | sed 's|refs/heads/||; s|refs/remotes/origin/|_upstream_|; s|refs/tags/|tags/|'); \
+    if echo "$ref" | grep -q "HEAD"; then continue; fi; \
+    git fetch {bundle_container_path} "$ref:refs/heads/$branch_name" 2>/dev/null || true; \
+done && \
+git remote add origin http://{self.username}:{self.password}@localhost:3000/{org}/{name}.git && \
+git push origin --all --force 2>&1 && \
+git push origin --tags --force 2>&1
 """
         code, stdout, stderr = await self._exec(commands.strip())
         

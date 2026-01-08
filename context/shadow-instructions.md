@@ -1,6 +1,6 @@
 # Shadow Environment Instructions
 
-You have access to the `shadow` tool for creating isolated test environments.
+You have access to the `amplifier-shadow` tool for creating isolated test environments.
 
 ## Quick Reference
 
@@ -20,7 +20,7 @@ You have access to the `shadow` tool for creating isolated test environments.
 Shadow environments use **selective git URL rewriting**. When you create a shadow with local sources:
 
 ```bash
-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
 ```
 
 Git is configured to rewrite only that specific repo:
