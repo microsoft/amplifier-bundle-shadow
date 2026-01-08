@@ -19,7 +19,7 @@ class SeatbeltBackend(SandboxBackend):
     Uses sandbox-exec with a custom profile to create isolated environments with:
     - Restricted filesystem access
     - Custom environment variables
-    - Network restrictions for github.com
+    - Local repo mounts with selective git URL rewriting
     
     Note: macOS Seatbelt is less flexible than Bubblewrap - it can't easily
     remap paths, so we use environment variables and symlinks instead.
@@ -88,7 +88,7 @@ class SeatbeltBackend(SandboxBackend):
     (subpath "{home}")
 )
 
-;; Read-only access to mock repos
+;; Read-only access to local source snapshots
 (allow file-read*
     (subpath "{repos}")
 )

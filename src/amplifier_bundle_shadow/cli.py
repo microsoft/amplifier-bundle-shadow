@@ -36,8 +36,8 @@ def main(ctx: click.Context, shadow_home: Path | None) -> None:
     """
     Shadow environments for safely testing Amplifier ecosystem changes.
     
-    Create isolated sandbox environments that intercept git operations to use
-    local mock repositories, enabling safe testing before deployment.
+    Create isolated sandbox environments where local working directories are
+    snapshotted and served as git dependencies. Other repos fetch from real GitHub.
     """
     ctx.ensure_object(dict)
     ctx.obj["manager"] = ShadowManager(shadow_home)

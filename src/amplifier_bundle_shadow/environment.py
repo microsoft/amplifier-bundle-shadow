@@ -22,7 +22,7 @@ class ShadowEnvironment:
     
     A shadow environment provides an isolated space for testing Amplifier
     ecosystem changes. It includes:
-    - Mock git repositories that intercept github.com URLs
+    - Local source snapshots with selective git URL rewriting
     - An isolated workspace directory
     - An isolated home directory with fresh AMPLIFIER_HOME
     """

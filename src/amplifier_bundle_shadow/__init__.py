@@ -1,9 +1,9 @@
 """
 Amplifier Shadow - OS-level sandboxed environments for testing Amplifier changes.
 
-This package provides tools for creating isolated shadow environments that intercept
-git operations to use local mock repositories, enabling safe testing of changes
-before deployment.
+This package provides tools for creating isolated shadow environments where your
+local working directories (including uncommitted changes) are snapshotted and
+served as git dependencies via URL rewriting. Other repos fetch from real GitHub.
 """
 
 __version__ = "0.1.0"

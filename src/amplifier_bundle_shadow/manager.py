@@ -36,7 +36,8 @@ class ShadowManager:
     Manages the lifecycle of shadow environments.
     
     This class handles:
-    - Creating new shadow environments with mock repos
+    - Creating new shadow environments with local source snapshots
+    - Selective git URL rewriting for specified repos only
     - Tracking active environments
     - Destroying environments and cleaning up
     """
