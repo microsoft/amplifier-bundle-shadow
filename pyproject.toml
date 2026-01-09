@@ -41,11 +41,12 @@ build-backend = "hatchling.build"
 packages = ["src/amplifier_bundle_shadow"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"container" = "amplifier_bundle_shadow/container"
-"bundle.yaml" = "amplifier_bundle_shadow/bundle.yaml"
-"bundles" = "amplifier_bundle_shadow/bundles"
-"agents" = "amplifier_bundle_shadow/agents"
-"context" = "amplifier_bundle_shadow/context"
+# Bundle resources go into _bundle/ subdirectory to avoid shadowing the Python package
+"container" = "amplifier_bundle_shadow/_bundle/container"
+"bundle.yaml" = "amplifier_bundle_shadow/_bundle/bundle.yaml"
+"bundles" = "amplifier_bundle_shadow/_bundle/bundles"
+"agents" = "amplifier_bundle_shadow/_bundle/agents"
+"context" = "amplifier_bundle_shadow/_bundle/context"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
