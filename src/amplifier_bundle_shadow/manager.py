@@ -57,6 +57,7 @@ class ShadowManager:
         local_sources: list[str] | None = None,
         name: str | None = None,
         image: str = DEFAULT_IMAGE,
+        env: dict[str, str] | None = None,
     ) -> ShadowEnvironment:
         """
         Create a new shadow environment.
@@ -65,6 +66,7 @@ class ShadowManager:
             local_sources: List of local source mappings (e.g., '~/repos/amplifier-core:microsoft/amplifier-core')
             name: Optional name for the environment. Auto-generated if not provided.
             image: Container image to use (defaults to ghcr.io/microsoft/amplifier-shadow:latest)
+            env: Environment variables to pass to the container (e.g., API keys)
             
         Returns:
             A new ShadowEnvironment ready for use
@@ -129,6 +131,7 @@ class ShadowManager:
                 image=image,
                 name=container_name,
                 mounts=mounts,
+                env=env,
                 detach=True,
             )
         except Exception as e:

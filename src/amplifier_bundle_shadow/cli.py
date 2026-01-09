@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -12,6 +13,18 @@ from rich.table import Table
 
 from . import __version__
 from .manager import ShadowManager, DEFAULT_IMAGE
+
+# Common API key environment variables to auto-passthrough
+DEFAULT_ENV_PATTERNS = [
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_ENDPOINT",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OLLAMA_HOST",
+    "VLLM_API_BASE",
+]
 
 console = Console()
 error_console = Console(stderr=True)
@@ -55,12 +68,30 @@ def main(ctx: click.Context, shadow_home: Path | None) -> None:
     default=DEFAULT_IMAGE,
     help=f"Container image to use (default: {DEFAULT_IMAGE})",
 )
+@click.option(
+    "--env", "-e",
+    multiple=True,
+    help="Environment variable to pass (KEY=VALUE or just KEY to inherit from host)",
+)
+@click.option(
+    "--env-file",
+    type=click.Path(exists=True, path_type=Path),
+    help="File with environment variables (one per line, KEY=VALUE format)",
+)
+@click.option(
+    "--pass-api-keys/--no-pass-api-keys",
+    default=True,
+    help="Auto-pass common API key env vars from host (default: enabled)",
+)
 @click.pass_context
 def create(
     ctx: click.Context,
     local: tuple[str, ...],
     name: str | None,
     image: str,
+    env: tuple[str, ...],
+    env_file: Path | None,
+    pass_api_keys: bool,
 ) -> None:
     """
     Create a new shadow environment with local source overrides.
@@ -93,12 +124,43 @@ def create(
         error_console.print("  amplifier-shadow create --local ~/repos/myrepo:org/myrepo")
         sys.exit(1)
     
+    # Collect environment variables
+    env_vars: dict[str, str] = {}
+    
+    # Auto-pass common API keys from host environment
+    if pass_api_keys:
+        for key in DEFAULT_ENV_PATTERNS:
+            value = os.environ.get(key)
+            if value:
+                env_vars[key] = value
+    
+    # Load from env file if specified
+    if env_file:
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    env_vars[key.strip()] = value.strip()
+    
+    # Process explicit --env options
+    for env_spec in env:
+        if "=" in env_spec:
+            key, value = env_spec.split("=", 1)
+            env_vars[key] = value
+        else:
+            # Just a key name - inherit from host
+            value = os.environ.get(env_spec)
+            if value:
+                env_vars[env_spec] = value
+    
     with console.status("[bold blue]Creating shadow environment..."):
         try:
-            env = run_async(manager.create(
+            shadow_env = run_async(manager.create(
                 local_sources=list(local),
                 name=name,
                 image=image,
+                env=env_vars if env_vars else None,
             ))
         except Exception as e:
             error_console.print(f"[red]Error:[/red] {e}")
@@ -106,15 +168,17 @@ def create(
     
     console.print()
     console.print("[green]Shadow environment ready![/green]")
-    console.print(f"  ID: [bold]{env.shadow_id}[/bold]")
+    console.print(f"  ID: [bold]{shadow_env.shadow_id}[/bold]")
     console.print(f"  Mode: container")
+    if env_vars:
+        console.print(f"  Environment: {len(env_vars)} variable(s) passed")
     console.print(f"  Local sources:")
-    for r in env.repos:
+    for r in shadow_env.repos:
         console.print(f"    - {r.full_name} <- {r.local_path}")
     console.print()
     console.print("Next steps:")
-    console.print(f"  [dim]amplifier-shadow exec {env.shadow_id} \"uv pip install git+https://github.com/...\"[/dim]")
-    console.print(f"  [dim]amplifier-shadow shell {env.shadow_id}[/dim]")
+    console.print(f"  [dim]amplifier-shadow exec {shadow_env.shadow_id} \"uv pip install git+https://github.com/...\"[/dim]")
+    console.print(f"  [dim]amplifier-shadow shell {shadow_env.shadow_id}[/dim]")
 
 
 @main.command()
