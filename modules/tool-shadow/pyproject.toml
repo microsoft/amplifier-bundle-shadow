@@ -13,18 +13,6 @@ dependencies = []
 [project.entry-points."amplifier.modules"]
 tool-shadow = "amplifier_module_tool_shadow:mount"
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-    "amplifier-core",
-    "amplifier-bundle-shadow",
-]
-
-[tool.uv.sources]
-amplifier-core = { path = "../../../amplifier-core", editable = true }
-amplifier-bundle-shadow = { path = "../..", editable = true }
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
