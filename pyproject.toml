@@ -29,19 +29,9 @@ dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
 ]
-# Tool module requires amplifier-core (only needed when used as Amplifier module)
-tool = [
-    "amplifier-core>=1.0.0",
-]
 
 [project.scripts]
 amplifier-shadow = "amplifier_bundle_shadow.cli:main"
-
-[project.entry-points."amplifier.modules"]
-tool-shadow = "amplifier_bundle_shadow.tool:mount"
-
-[project.entry-points."amplifier.bundles"]
-shadow = "amplifier_bundle_shadow:get_bundle_path"
 
 [build-system]
 requires = ["hatchling"]

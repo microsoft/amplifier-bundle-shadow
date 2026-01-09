@@ -10,12 +10,25 @@ from __future__ import annotations
 
 __amplifier_module_type__ = "tool"
 
+import os
 from typing import Any
 
 from amplifier_core import ToolResult
 
 from amplifier_bundle_shadow import ShadowManager
 from amplifier_bundle_shadow.manager import DEFAULT_IMAGE
+
+# Common API key environment variables to auto-passthrough
+DEFAULT_ENV_PATTERNS = [
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_ENDPOINT",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "OLLAMA_HOST",
+    "VLLM_API_BASE",
+]
 
 
 class ShadowTool:
@@ -133,10 +146,18 @@ class ShadowTool:
                 error={"message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]"},
             )
 
+        # Auto-passthrough common API key env vars from host
+        env_vars: dict[str, str] = {}
+        for key in DEFAULT_ENV_PATTERNS:
+            value = os.environ.get(key)
+            if value:
+                env_vars[key] = value
+
         env = await self.manager.create(
             local_sources=local_sources,
             name=name,
             image=image,
+            env=env_vars if env_vars else None,
         )
 
         return ToolResult(

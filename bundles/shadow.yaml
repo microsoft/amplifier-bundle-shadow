@@ -10,10 +10,7 @@ description: |
 # Tools provided by this bundle
 tools:
   - module: tool-shadow
-    config:
-      # Default configuration for the shadow tool
-      default_mode: auto
-      network_enabled: true
+    source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
 
 # Agents provided by this bundle
 agents:
