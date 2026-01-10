@@ -22,7 +22,9 @@ amplifier-shadow --version
 
 ## Your Capabilities
 
-You have access to the `shadow` tool which allows you to:
+You have access to the `shadow` tool (MCP tool) which allows you to:
+
+**IMPORTANT**: The in-session tool is named `shadow`. If you don't have access to this tool, fall back to the `amplifier-shadow` CLI (note: CLI name is `amplifier-shadow`, NOT `shadow`).
 
 1. **Create shadow environments** - Set up isolated containers with local source snapshots
 2. **Execute commands** - Run commands inside the container safely
@@ -32,6 +34,15 @@ You have access to the `shadow` tool which allows you to:
 6. **Manage lifecycle** - List, monitor, and destroy environments
 
 ## Using the Shadow Tool
+
+**Two ways to interact with shadow environments:**
+
+| Method | Name | When to Use |
+|--------|------|-------------|
+| MCP Tool | `shadow` | When available in your session (preferred) |
+| CLI | `amplifier-shadow` | Fallback when tool not available |
+
+**NEVER use `shadow` as a CLI command** - the CLI is `amplifier-shadow`.
 
 The shadow tool provides these operations:
 
@@ -74,6 +85,38 @@ shadow(operation="inject", shadow_id="my-test", host_path="./file.py", container
 ```
 shadow(operation="destroy", shadow_id="my-test", force=true)
 ```
+
+## CLI Fallback (When Tool Not Available)
+
+If the `shadow` MCP tool is not available in your session, use the `amplifier-shadow` CLI:
+
+```bash
+# Create (CLI equivalent of shadow(operation="create", ...))
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name test-env
+
+# Execute (CLI equivalent of shadow(operation="exec", ...))
+amplifier-shadow exec test-env "uv tool install git+https://github.com/microsoft/amplifier"
+
+# List
+amplifier-shadow list
+
+# Status
+amplifier-shadow status test-env
+
+# Diff
+amplifier-shadow diff test-env
+
+# Extract
+amplifier-shadow extract test-env /workspace/file.py ./file.py
+
+# Inject
+amplifier-shadow inject test-env ./file.py /workspace/file.py
+
+# Destroy
+amplifier-shadow destroy test-env --force
+```
+
+**Remember**: CLI is `amplifier-shadow`, NOT `shadow`.
 
 ## When to Use Shadow Environments
 

@@ -89,10 +89,10 @@ The CLI automatically passes API keys into the container:
 
 ```bash
 # Auto-passed: ANTHROPIC_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_*, GEMINI_API_KEY, etc.
-shadow create --name test --pass-api-keys
+amplifier-shadow create --name test --pass-api-keys
 
 # Manual env vars
-shadow create --name test --env MY_VAR=value --env-file .env
+amplifier-shadow create --name test --env MY_VAR=value --env-file .env
 ```
 
 ## Container Image
@@ -197,41 +197,41 @@ exec "$@"
 ```bash
 # Create shadow environment with local sources
 # Format: --local /path/to/repo:org/name
-shadow create \
+amplifier-shadow create \
     --local ~/repos/amplifier-core:microsoft/amplifier-core \
     --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
     --name my-test
 
 # List environments
-shadow list
+amplifier-shadow list
 
 # Execute command in shadow
-shadow exec my-test "uv pip install amplifier"
-shadow exec my-test "amplifier run --mode single 'hello'"
+amplifier-shadow exec my-test "uv pip install amplifier"
+amplifier-shadow exec my-test "amplifier run --mode single 'hello'"
 
 # Interactive shell
-shadow shell my-test
+amplifier-shadow shell my-test
 
 # Status
-shadow status my-test
+amplifier-shadow status my-test
 
 # Show changed files since creation
-shadow diff my-test
+amplifier-shadow diff my-test
 
 # Copy file from container to host
-shadow extract my-test /workspace/file.py ./file.py
+amplifier-shadow extract my-test /workspace/file.py ./file.py
 
 # Copy file from host to container
-shadow inject my-test ./file.py /workspace/file.py
+amplifier-shadow inject my-test ./file.py /workspace/file.py
 
 # Destroy single environment
-shadow destroy my-test
+amplifier-shadow destroy my-test
 
 # Destroy all environments
-shadow destroy-all
+amplifier-shadow destroy-all
 
 # Build container image locally (auto-runs if image missing)
-shadow build
+amplifier-shadow build
 ```
 
 ### Create Flow
@@ -829,8 +829,8 @@ async def test_full_workflow():
 
 ## Success Criteria
 
-1. `shadow create` with local sources works on Linux and macOS
+1. `amplifier-shadow create` with local sources works on Linux and macOS
 2. `git clone https://github.com/...` inside shadow uses local snapshot
 3. `uv pip install git+https://github.com/...` uses local snapshot
 4. Multiple shadows can run simultaneously with different repo versions
-5. `shadow destroy` cleanly removes all resources
+5. `amplifier-shadow destroy` cleanly removes all resources
