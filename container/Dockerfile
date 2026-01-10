@@ -3,13 +3,18 @@ FROM python:3.12-slim
 ARG GITEA_VERSION=1.21.4
 ARG TARGETARCH
 
-# Install dependencies
+# Install dependencies and common CLI tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
     sqlite3 \
     gosu \
+    jq \
+    less \
+    vim-tiny \
+    tree \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gitea
