@@ -42,6 +42,8 @@ brew install podman         # macOS
 
 The shadow tool will automatically detect and use podman if available, falling back to docker.
 
+> **Shell Note**: The container uses `bash`. Use `. .venv/bin/activate` (dot syntax) which works in both `sh` and `bash`, for maximum compatibility.
+
 ## Quick Start
 
 ```bash
@@ -133,7 +135,67 @@ This means:
 |--------|-------------|
 | `--local`, `-l` | Local source mapping: `/path/to/repo:org/name` (repeatable) |
 | `--name`, `-n` | Name for the environment (auto-generated if not provided) |
-| `--image`, `-i` | Container image to use (default: `ghcr.io/microsoft/amplifier-shadow:latest`) |
+| `--image`, `-i` | Container image to use (default: `amplifier-shadow:local`, auto-built if missing) |
+
+## Common Patterns
+
+### Test a Single Module
+
+```bash
+# Testing your module with the real amplifier stack
+amplifier-shadow create --local ~/repos/my-module:myorg/my-module --name module-test
+
+# Clone and test inside shadow
+amplifier-shadow exec module-test "
+  cd /workspace && 
+  git clone https://github.com/myorg/my-module &&
+  cd my-module &&
+  uv venv && . .venv/bin/activate &&
+  uv pip install -e '.[dev]' &&
+  pytest
+"
+```
+
+### Test a PR/Branch Against Main
+
+```bash
+# Your feature branch is snapshotted; all other deps use main from GitHub
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name pr-test
+
+# Install full stack - only amplifier-core uses your local changes
+amplifier-shadow exec pr-test "uv pip install git+https://github.com/microsoft/amplifier"
+```
+
+### Full Stack Integration Test
+
+```bash
+# Test changes across the entire Amplifier stack
+amplifier-shadow create \
+    --local ~/repos/amplifier-core:microsoft/amplifier-core \
+    --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
+    --local ~/repos/amplifier-app-cli:microsoft/amplifier-app-cli \
+    --name full-stack
+
+amplifier-shadow exec full-stack "uv pip install git+https://github.com/microsoft/amplifier"
+amplifier-shadow exec full-stack "amplifier --help"
+```
+
+### Iterate on Failures
+
+```bash
+# 1. Create shadow and run tests
+amplifier-shadow create --local ~/repos/my-module:org/my-module --name test
+amplifier-shadow exec test "cd /workspace && git clone ... && pytest"
+
+# 2. Tests fail - fix locally on host
+
+# 3. Destroy and recreate (picks up your local changes)
+amplifier-shadow destroy test
+amplifier-shadow create --local ~/repos/my-module:org/my-module --name test
+amplifier-shadow exec test "cd /workspace && git clone ... && pytest"
+
+# 4. Tests pass - commit with confidence!
+```
 
 ## Use Cases
 
@@ -176,6 +238,70 @@ $ exit
 
 # Back on host - extract any files you created
 amplifier-shadow extract test-env /workspace/notes.txt ./notes.txt
+```
+
+## When to Use Shadow vs Source Overrides
+
+Amplifier offers two approaches for testing local changes:
+
+| Approach | Command | Use When |
+|----------|---------|----------|
+| **Shadow Environment** | `amplifier-shadow create --local ...` | Testing installation flow, clean environment needed, multi-repo testing |
+| **Source Override** | `amplifier source add org/repo /path` | Quick iteration, testing module loading, no container overhead |
+
+**Shadow environments** are best when you need:
+- Complete isolation from your host environment
+- To test the full `git clone` → `pip install` flow
+- To verify your changes work in a clean container
+- To test multiple interdependent repos together
+
+**Source overrides** are best when you need:
+- Fast iteration without container startup
+- To test module loading and registration
+- Quick validation before full shadow testing
+
+## Troubleshooting
+
+### PEP 668: Externally-Managed Environment
+
+On modern Linux (Ubuntu 24.04+, Debian 12+), you may see:
+```
+error: externally-managed-environment
+× This environment is externally managed
+```
+
+**Solution**: Always use virtual environments inside the shadow:
+```bash
+amplifier-shadow exec my-shadow "
+  cd /workspace &&
+  uv venv &&
+  . .venv/bin/activate &&
+  uv pip install ...
+"
+```
+
+### Container Image Not Found
+
+If you see image pull errors, build the image locally:
+```bash
+amplifier-shadow build
+```
+
+This builds `amplifier-shadow:local` from the bundled Dockerfile.
+
+### Git Lock File Errors
+
+If you see `index.lock` errors, ensure no git operations are running on your host repo, then destroy and recreate the shadow:
+```bash
+amplifier-shadow destroy my-shadow
+amplifier-shadow create --local ~/repos/my-repo:org/my-repo --name my-shadow
+```
+
+### /workspace Permission Denied
+
+The `/workspace` directory may not be writable in all configurations. Use `$HOME` or `/tmp` as alternatives:
+```bash
+amplifier-shadow exec my-shadow "cd $HOME && git clone ..."
 ```
 
 ## Contributing
