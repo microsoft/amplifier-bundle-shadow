@@ -28,11 +28,15 @@ class TestUncommittedChanges:
         subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"],
-            cwd=repo, capture_output=True, check=True
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test"],
-            cwd=repo, capture_output=True, check=True
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
 
         # Create initial commit
@@ -42,7 +46,9 @@ class TestUncommittedChanges:
         subprocess.run(["git", "add", "."], cwd=repo, capture_output=True, check=True)
         subprocess.run(
             ["git", "commit", "-m", "Initial"],
-            cwd=repo, capture_output=True, check=True
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
 
         # Now make uncommitted changes
@@ -91,8 +97,12 @@ class TestUncommittedChanges:
         # Check the modified file has the NEW content (2.0.0-dev), not the committed content (1.0.0)
         cat_result = await env.exec("cat /workspace/clone/src/__init__.py")
         assert cat_result.exit_code == 0, "Failed to read __init__.py"
-        assert '2.0.0-dev' in cat_result.stdout, f"Expected modified content, got: {cat_result.stdout}"
-        assert '1.0.0' not in cat_result.stdout, f"Got committed content instead of uncommitted: {cat_result.stdout}"
+        assert "2.0.0-dev" in cat_result.stdout, (
+            f"Expected modified content, got: {cat_result.stdout}"
+        )
+        assert "1.0.0" not in cat_result.stdout, (
+            f"Got committed content instead of uncommitted: {cat_result.stdout}"
+        )
 
     @pytest.mark.asyncio
     async def test_new_untracked_file_captured(self, shadow_with_dirty_repo):
@@ -107,8 +117,12 @@ class TestUncommittedChanges:
 
         # Check the new file exists
         cat_result = await env.exec("cat /workspace/clone/new_feature.py")
-        assert cat_result.exit_code == 0, "new_feature.py not found - untracked file not captured"
-        assert "New feature" in cat_result.stdout, f"Unexpected content: {cat_result.stdout}"
+        assert cat_result.exit_code == 0, (
+            "new_feature.py not found - untracked file not captured"
+        )
+        assert "New feature" in cat_result.stdout, (
+            f"Unexpected content: {cat_result.stdout}"
+        )
 
     @pytest.mark.asyncio
     async def test_staged_file_captured(self, shadow_with_dirty_repo):
@@ -123,13 +137,15 @@ class TestUncommittedChanges:
 
         # Check the staged file exists
         cat_result = await env.exec("cat /workspace/clone/staged.txt")
-        assert cat_result.exit_code == 0, "staged.txt not found - staged file not captured"
+        assert cat_result.exit_code == 0, (
+            "staged.txt not found - staged file not captured"
+        )
         assert "Staged but not committed" in cat_result.stdout
 
     @pytest.mark.asyncio
     async def test_deleted_file_behavior(self, shadow_with_dirty_repo):
         """Unstaged deletions: file still exists in snapshot (known limitation).
-        
+
         The snapshot captures the working tree content via git operations,
         but unstaged deletions aren't reflected because the file still exists
         in git's index. To have a deletion reflected, stage it with `git rm`.
@@ -146,7 +162,9 @@ class TestUncommittedChanges:
         # The file still exists because git's snapshot includes it from the index
         check = await env.exec("test -f /workspace/clone/original.txt")
         # This PASSES (file exists) - documenting current behavior, not a bug
-        assert check.exit_code == 0, "Behavior changed - unstaged deletions now captured?"
+        assert check.exit_code == 0, (
+            "Behavior changed - unstaged deletions now captured?"
+        )
 
 
 class TestCleanRepo:
@@ -200,14 +218,14 @@ class TestMultipleLocalSources:
         env, _ = shadow_with_multiple_repos
 
         # Check URL rewriting config
-        result = await env.exec(
-            'git config --global --get-regexp "url.*insteadOf"'
-        )
+        result = await env.exec('git config --global --get-regexp "url.*insteadOf"')
         assert result.exit_code == 0
 
         # Both repos should be rewritten
         assert "amplifier-core" in result.stdout, "amplifier-core not rewritten"
-        assert "amplifier-foundation" in result.stdout, "amplifier-foundation not rewritten"
+        assert "amplifier-foundation" in result.stdout, (
+            "amplifier-foundation not rewritten"
+        )
 
     @pytest.mark.asyncio
     async def test_each_repo_has_correct_content(self, shadow_with_multiple_repos):
@@ -225,13 +243,15 @@ class TestMultipleLocalSources:
         found_result = await env.exec(
             "cat /workspace/amplifier-foundation/src/__init__.py"
         )
-        assert "0.2.0-dev" in found_result.stdout, "amplifier-foundation should have dirty changes"
+        assert "0.2.0-dev" in found_result.stdout, (
+            "amplifier-foundation should have dirty changes"
+        )
 
         # Check amplifier-core has clean content (version 0.1.0)
-        core_result = await env.exec(
-            "cat /workspace/amplifier-core/src/__init__.py"
+        core_result = await env.exec("cat /workspace/amplifier-core/src/__init__.py")
+        assert "0.1.0" in core_result.stdout, (
+            "amplifier-core should have clean (committed) content"
         )
-        assert "0.1.0" in core_result.stdout, "amplifier-core should have clean (committed) content"
 
     @pytest.mark.asyncio
     async def test_unregistered_repo_not_rewritten(self, shadow_with_multiple_repos):
@@ -239,10 +259,9 @@ class TestMultipleLocalSources:
         env, _ = shadow_with_multiple_repos
 
         # amplifier (without -core or -foundation) is not registered
-        result = await env.exec(
+        # This test verifies the URL rewrite config doesn't include unregistered repos
+        # A full test would require network access to try cloning from real GitHub
+        _ = await env.exec(
             'git config --global --get-regexp "url.*insteadOf" | grep "microsoft/amplifier[^-]" || echo "NOT_FOUND"'
         )
-
-        # Should NOT find a rewrite for just "amplifier" (only amplifier-core and amplifier-foundation)
-        # This is a bit tricky to test without actually trying to clone from GitHub
-        pass  # Placeholder - actual test would need network access verification
+        # Placeholder - actual verification would need network access

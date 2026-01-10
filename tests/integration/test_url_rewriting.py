@@ -22,13 +22,17 @@ class TestURLRewriting:
         env = live_shadow_env
 
         # Check that git config contains URL rewriting rule
-        result = await env.exec(
-            'git config --global --get-regexp "url.*insteadOf"'
-        )
+        result = await env.exec('git config --global --get-regexp "url.*insteadOf"')
 
-        assert result.exit_code == 0, f"No URL rewriting configured. stderr={result.stderr}"
-        assert "localhost:3000" in result.stdout, f"Gitea URL not in config: {result.stdout}"
-        assert "github.com" in result.stdout, f"GitHub not being rewritten: {result.stdout}"
+        assert result.exit_code == 0, (
+            f"No URL rewriting configured. stderr={result.stderr}"
+        )
+        assert "localhost:3000" in result.stdout, (
+            f"Gitea URL not in config: {result.stdout}"
+        )
+        assert "github.com" in result.stdout, (
+            f"GitHub not being rewritten: {result.stdout}"
+        )
 
     @pytest.mark.asyncio
     async def test_git_plus_https_rewritten(self, live_shadow_env):
@@ -36,9 +40,7 @@ class TestURLRewriting:
         env = live_shadow_env
 
         # The git config should handle this - verify the rewrite patterns
-        result = await env.exec(
-            'git config --global --get-regexp "url.*insteadOf"'
-        )
+        result = await env.exec('git config --global --get-regexp "url.*insteadOf"')
 
         # Should have both https:// and git+https:// variants
         # Or just https:// which covers both
@@ -51,9 +53,7 @@ class TestURLRewriting:
         env = live_shadow_env
 
         # Check that only specific repos are rewritten, not all GitHub URLs
-        result = await env.exec(
-            'git config --global --get-regexp "url.*insteadOf"'
-        )
+        result = await env.exec('git config --global --get-regexp "url.*insteadOf"')
 
         assert result.exit_code == 0
         # The URL rewriting should be specific to the registered org/repo
@@ -77,7 +77,9 @@ class TestURLRewriting:
         )
 
         # Should succeed (Gitea has the repo)
-        assert result.exit_code == 0, f"Clone failed: stdout={result.stdout}, stderr={result.stderr}"
+        assert result.exit_code == 0, (
+            f"Clone failed: stdout={result.stdout}, stderr={result.stderr}"
+        )
 
         # Verify the clone exists
         check = await env.exec("test -d /workspace/test-clone")
@@ -89,9 +91,7 @@ class TestURLRewriting:
         env = live_shadow_env
 
         # Both variants should be handled
-        result = await env.exec(
-            'git config --global --get-regexp "url.*insteadOf"'
-        )
+        result = await env.exec('git config --global --get-regexp "url.*insteadOf"')
 
         assert result.exit_code == 0
         # The implementation should handle .git suffix variations
@@ -111,7 +111,9 @@ class TestGiteaSetup:
         )
 
         assert result.exit_code == 0, f"curl failed: {result.stderr}"
-        assert result.stdout.strip() == "200", f"Gitea not responding: HTTP {result.stdout}"
+        assert result.stdout.strip() == "200", (
+            f"Gitea not responding: HTTP {result.stdout}"
+        )
 
     @pytest.mark.asyncio
     async def test_gitea_has_repos(self, live_shadow_env):
@@ -125,7 +127,11 @@ class TestGiteaSetup:
 
         assert result.exit_code == 0, f"API call failed: {result.stderr}"
         # Should have at least one repo
-        assert '"data"' in result.stdout or '"ok"' in result.stdout or "repo" in result.stdout.lower()
+        assert (
+            '"data"' in result.stdout
+            or '"ok"' in result.stdout
+            or "repo" in result.stdout.lower()
+        )
 
     @pytest.mark.asyncio
     async def test_snapshot_contains_files(self, live_shadow_env, temp_git_repo):
@@ -141,4 +147,6 @@ class TestGiteaSetup:
         # Check that README.md exists (created by temp_git_repo fixture)
         cat_result = await env.exec("cat /workspace/check-content/README.md")
         assert cat_result.exit_code == 0, "README.md not found in cloned repo"
-        assert "Test Repository" in cat_result.stdout, f"Unexpected content: {cat_result.stdout}"
+        assert "Test Repository" in cat_result.stdout, (
+            f"Unexpected content: {cat_result.stdout}"
+        )

@@ -12,7 +12,12 @@ __version__ = "0.1.0"
 from .models import RepoSpec, ExecResult, ShadowStatus, ShadowInfo, ChangedFile
 from .environment import ShadowEnvironment
 from .manager import ShadowManager
-from .container import ContainerRuntime, Mount, ContainerNotFoundError, ContainerRuntimeError
+from .container import (
+    ContainerRuntime,
+    Mount,
+    ContainerNotFoundError,
+    ContainerRuntimeError,
+)
 from .snapshot import SnapshotManager, SnapshotResult, SnapshotError
 from .gitea import GiteaClient, GiteaError, GiteaTimeoutError
 

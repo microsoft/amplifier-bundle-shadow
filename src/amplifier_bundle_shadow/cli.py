@@ -47,7 +47,7 @@ def run_async(coro):
 def main(ctx: click.Context, shadow_home: Path | None) -> None:
     """
     Shadow environments for safely testing Amplifier ecosystem changes.
-    
+
     Create isolated container environments where local working directories are
     snapshotted and served via an embedded Gitea server. All git operations
     inside the container use your local snapshots instead of fetching from GitHub.
@@ -58,18 +58,23 @@ def main(ctx: click.Context, shadow_home: Path | None) -> None:
 
 @main.command()
 @click.option(
-    "--local", "-l",
+    "--local",
+    "-l",
     multiple=True,
     help="Local source mapping: /path/to/repo:org/name (can be repeated)",
 )
-@click.option("--name", "-n", help="Name for the environment (auto-generated if not provided)")
 @click.option(
-    "--image", "-i",
+    "--name", "-n", help="Name for the environment (auto-generated if not provided)"
+)
+@click.option(
+    "--image",
+    "-i",
     default=DEFAULT_IMAGE,
     help=f"Container image to use (default: {DEFAULT_IMAGE})",
 )
 @click.option(
-    "--env", "-e",
+    "--env",
+    "-e",
     multiple=True,
     help="Environment variable to pass (KEY=VALUE or just KEY to inherit from host)",
 )
@@ -116,24 +121,26 @@ def create(
         # -> amplifier-core/foundation use your local snapshots
     """
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     if not local:
         error_console.print("[red]Error:[/red] At least one --local source is required")
         error_console.print()
         error_console.print("Example:")
-        error_console.print("  amplifier-shadow create --local ~/repos/myrepo:org/myrepo")
+        error_console.print(
+            "  amplifier-shadow create --local ~/repos/myrepo:org/myrepo"
+        )
         sys.exit(1)
-    
+
     # Collect environment variables
     env_vars: dict[str, str] = {}
-    
+
     # Auto-pass common API keys from host environment
     if pass_api_keys:
         for key in DEFAULT_ENV_PATTERNS:
             value = os.environ.get(key)
             if value:
                 env_vars[key] = value
-    
+
     # Load from env file if specified
     if env_file:
         with open(env_file) as f:
@@ -142,7 +149,7 @@ def create(
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
                     env_vars[key.strip()] = value.strip()
-    
+
     # Process explicit --env options
     for env_spec in env:
         if "=" in env_spec:
@@ -153,73 +160,83 @@ def create(
             value = os.environ.get(env_spec)
             if value:
                 env_vars[env_spec] = value
-    
+
     with console.status("[bold blue]Creating shadow environment..."):
         try:
-            shadow_env = run_async(manager.create(
-                local_sources=list(local),
-                name=name,
-                image=image,
-                env=env_vars if env_vars else None,
-            ))
+            shadow_env = run_async(
+                manager.create(
+                    local_sources=list(local),
+                    name=name,
+                    image=image,
+                    env=env_vars if env_vars else None,
+                )
+            )
         except Exception as e:
             error_console.print(f"[red]Error:[/red] {e}")
             sys.exit(1)
-    
+
     console.print()
     console.print("[green]Shadow environment ready![/green]")
     console.print(f"  ID: [bold]{shadow_env.shadow_id}[/bold]")
-    console.print(f"  Mode: container")
+    console.print("  Mode: container")
     if env_vars:
         console.print(f"  Environment: {len(env_vars)} variable(s) passed")
-    console.print(f"  Local sources:")
+    console.print("  Local sources:")
     for r in shadow_env.repos:
         console.print(f"    - {r.full_name} <- {r.local_path}")
     console.print()
     console.print("Next steps:")
-    console.print(f"  [dim]amplifier-shadow exec {shadow_env.shadow_id} \"uv pip install git+https://github.com/...\"[/dim]")
+    console.print(
+        f'  [dim]amplifier-shadow exec {shadow_env.shadow_id} "uv pip install git+https://github.com/..."[/dim]'
+    )
     console.print(f"  [dim]amplifier-shadow shell {shadow_env.shadow_id}[/dim]")
 
 
 @main.command()
 @click.argument("shadow_id")
 @click.argument("command")
-@click.option("--timeout", "-t", type=int, default=300, help="Timeout in seconds (default: 300)")
+@click.option(
+    "--timeout", "-t", type=int, default=300, help="Timeout in seconds (default: 300)"
+)
 @click.pass_context
 def exec(ctx: click.Context, shadow_id: str, command: str, timeout: int) -> None:
     """
     Execute a command inside a shadow environment.
-    
+
     SHADOW_ID: ID of the shadow environment
-    
+
     COMMAND: Shell command to execute
-    
+
     Examples:
-    
+
         amplifier-shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
-        
+
         amplifier-shadow exec shadow-abc123 "amplifier --version"
     """
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     env = manager.get(shadow_id)
     if not env:
-        error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        error_console.print(
+            f"[red]Error:[/red] Shadow environment not found: {shadow_id}"
+        )
         sys.exit(1)
-    
+
     # Check if container is running
     if not run_async(env.is_running()):
         error_console.print(f"[red]Error:[/red] Container not running for: {shadow_id}")
-        error_console.print("[dim]The container may have stopped. Try recreating the environment.[/dim]")
+        error_console.print(
+            "[dim]The container may have stopped. Try recreating the environment.[/dim]"
+        )
         sys.exit(1)
-    
+
     result = run_async(env.exec(command, timeout=timeout))
-    
+
     if result.stdout:
         console.print(result.stdout, end="")
     if result.stderr:
         error_console.print(result.stderr, end="")
-    
+
     sys.exit(result.exit_code)
 
 
@@ -229,30 +246,34 @@ def exec(ctx: click.Context, shadow_id: str, command: str, timeout: int) -> None
 def shell(ctx: click.Context, shadow_id: str) -> None:
     """
     Open an interactive shell inside a shadow environment.
-    
+
     SHADOW_ID: ID of the shadow environment
-    
+
     Example:
-    
+
         amplifier-shadow shell shadow-abc123
     """
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     env = manager.get(shadow_id)
     if not env:
-        error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        error_console.print(
+            f"[red]Error:[/red] Shadow environment not found: {shadow_id}"
+        )
         sys.exit(1)
-    
+
     # Check if container is running
     if not run_async(env.is_running()):
         error_console.print(f"[red]Error:[/red] Container not running for: {shadow_id}")
-        error_console.print("[dim]The container may have stopped. Try recreating the environment.[/dim]")
+        error_console.print(
+            "[dim]The container may have stopped. Try recreating the environment.[/dim]"
+        )
         sys.exit(1)
-    
+
     console.print(f"[dim]Entering shadow environment {shadow_id}...[/dim]")
     console.print("[dim]Type 'exit' to leave.[/dim]")
     console.print()
-    
+
     # This replaces the current process
     run_async(env.shell())
 
@@ -262,20 +283,20 @@ def shell(ctx: click.Context, shadow_id: str) -> None:
 def list_envs(ctx: click.Context) -> None:
     """List all shadow environments."""
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     environments = manager.list_environments()
-    
+
     if not environments:
         console.print("[dim]No shadow environments found.[/dim]")
         return
-    
+
     table = Table(title="Shadow Environments")
     table.add_column("ID", style="bold")
     table.add_column("Mode")
     table.add_column("Repos")
     table.add_column("Created")
     table.add_column("Running")
-    
+
     for env in environments:
         info = env.to_info()
         is_running = run_async(env.is_running())
@@ -286,7 +307,7 @@ def list_envs(ctx: click.Context) -> None:
             info.created_at[:19],  # Truncate to seconds
             "[green]yes[/green]" if is_running else "[red]no[/red]",
         )
-    
+
     console.print(table)
 
 
@@ -296,19 +317,23 @@ def list_envs(ctx: click.Context) -> None:
 def status(ctx: click.Context, shadow_id: str) -> None:
     """Show status of a shadow environment."""
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     env = manager.get(shadow_id)
     if not env:
-        error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        error_console.print(
+            f"[red]Error:[/red] Shadow environment not found: {shadow_id}"
+        )
         sys.exit(1)
-    
+
     info = env.to_info()
     is_running = run_async(env.is_running())
-    
+
     console.print(f"[bold]Shadow Environment: {info.shadow_id}[/bold]")
     console.print()
     console.print(f"  Mode: {info.mode}")
-    console.print(f"  Running: {'[green]yes[/green]' if is_running else '[red]no[/red]'}")
+    console.print(
+        f"  Running: {'[green]yes[/green]' if is_running else '[red]no[/red]'}"
+    )
     console.print(f"  Created: {info.created_at}")
     console.print(f"  Directory: {info.shadow_dir}")
     console.print()
@@ -324,18 +349,20 @@ def status(ctx: click.Context, shadow_id: str) -> None:
 def diff(ctx: click.Context, shadow_id: str, path: str | None) -> None:
     """Show changed files in a shadow environment."""
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     env = manager.get(shadow_id)
     if not env:
-        error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        error_console.print(
+            f"[red]Error:[/red] Shadow environment not found: {shadow_id}"
+        )
         sys.exit(1)
-    
+
     changed = env.diff(path)
-    
+
     if not changed:
         console.print("[dim]No changes detected.[/dim]")
         return
-    
+
     console.print(f"[bold]Changed files ({len(changed)}):[/bold]")
     for file in changed:
         if file.change_type == "added":
@@ -351,27 +378,31 @@ def diff(ctx: click.Context, shadow_id: str, path: str | None) -> None:
 @click.argument("container_path")
 @click.argument("host_path")
 @click.pass_context
-def extract(ctx: click.Context, shadow_id: str, container_path: str, host_path: str) -> None:
+def extract(
+    ctx: click.Context, shadow_id: str, container_path: str, host_path: str
+) -> None:
     """
     Extract a file from a shadow environment to the host.
-    
+
     SHADOW_ID: ID of the shadow environment
-    
+
     CONTAINER_PATH: Path inside the container (e.g., /workspace/file.py)
-    
+
     HOST_PATH: Destination path on the host
-    
+
     Example:
-    
+
         amplifier-shadow extract shadow-abc123 /workspace/src/fix.py ./fix.py
     """
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     env = manager.get(shadow_id)
     if not env:
-        error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        error_console.print(
+            f"[red]Error:[/red] Shadow environment not found: {shadow_id}"
+        )
         sys.exit(1)
-    
+
     try:
         bytes_copied = env.extract(container_path, host_path)
         console.print(f"[green]Extracted to {host_path}[/green] ({bytes_copied} bytes)")
@@ -388,27 +419,31 @@ def extract(ctx: click.Context, shadow_id: str, container_path: str, host_path: 
 @click.argument("host_path")
 @click.argument("container_path")
 @click.pass_context
-def inject(ctx: click.Context, shadow_id: str, host_path: str, container_path: str) -> None:
+def inject(
+    ctx: click.Context, shadow_id: str, host_path: str, container_path: str
+) -> None:
     """
     Copy a file from the host into a shadow environment.
-    
+
     SHADOW_ID: ID of the shadow environment
-    
+
     HOST_PATH: Source path on the host
-    
+
     CONTAINER_PATH: Destination path inside the container
-    
+
     Example:
-    
+
         amplifier-shadow inject shadow-abc123 ./fix.py /workspace/src/fix.py
     """
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     env = manager.get(shadow_id)
     if not env:
-        error_console.print(f"[red]Error:[/red] Shadow environment not found: {shadow_id}")
+        error_console.print(
+            f"[red]Error:[/red] Shadow environment not found: {shadow_id}"
+        )
         sys.exit(1)
-    
+
     try:
         env.inject(host_path, container_path)
         console.print(f"[green]Injected {host_path} to {container_path}[/green]")
@@ -422,21 +457,23 @@ def inject(ctx: click.Context, shadow_id: str, host_path: str, container_path: s
 
 @main.command()
 @click.argument("shadow_id")
-@click.option("--force", "-f", is_flag=True, help="Force destruction without confirmation")
+@click.option(
+    "--force", "-f", is_flag=True, help="Force destruction without confirmation"
+)
 @click.pass_context
 def destroy(ctx: click.Context, shadow_id: str, force: bool) -> None:
     """
     Destroy a shadow environment.
-    
+
     SHADOW_ID: ID of the shadow environment
     """
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     if not force:
         if not click.confirm(f"Destroy shadow environment '{shadow_id}'?"):
             console.print("[dim]Cancelled.[/dim]")
             return
-    
+
     try:
         run_async(manager.destroy(shadow_id))
         console.print(f"[green]Destroyed {shadow_id}[/green]")
@@ -446,24 +483,27 @@ def destroy(ctx: click.Context, shadow_id: str, force: bool) -> None:
 
 
 @main.command("destroy-all")
-@click.option("--force", "-f", is_flag=True, help="Force destruction without confirmation")
+@click.option(
+    "--force", "-f", is_flag=True, help="Force destruction without confirmation"
+)
 @click.pass_context
 def destroy_all(ctx: click.Context, force: bool) -> None:
     """Destroy all shadow environments."""
     manager: ShadowManager = ctx.obj["manager"]
-    
+
     if not force:
         if not click.confirm("Destroy ALL shadow environments?"):
             console.print("[dim]Cancelled.[/dim]")
             return
-    
+
     count = run_async(manager.destroy_all(force=True))
     console.print(f"[green]Destroyed {count} environment(s)[/green]")
 
 
 @main.command()
 @click.option(
-    "--tag", "-t",
+    "--tag",
+    "-t",
     default=None,
     help="Image tag (default: amplifier-shadow:local)",
 )
@@ -472,36 +512,36 @@ def destroy_all(ctx: click.Context, force: bool) -> None:
 def build(ctx: click.Context, tag: str | None, force: bool) -> None:
     """
     Build the shadow container image locally.
-    
+
     Builds the container image from bundled Dockerfile without needing
     to pull from a registry. The image is built locally and tagged
     as 'amplifier-shadow:local' by default.
-    
+
     Examples:
-    
+
         # Build with default tag
         amplifier-shadow build
-        
+
         # Build with custom tag
         amplifier-shadow build --tag my-shadow:v1
-        
+
         # Force rebuild
         amplifier-shadow build --force
     """
     from .builder import ImageBuilder, DEFAULT_IMAGE_NAME
-    
+
     image_tag = tag or DEFAULT_IMAGE_NAME
     builder = ImageBuilder()
-    
+
     # Check if image exists
     if not force and run_async(builder.image_exists(image_tag)):
         console.print(f"[yellow]Image already exists:[/yellow] {image_tag}")
         console.print("[dim]Use --force to rebuild[/dim]")
         return
-    
+
     console.print(f"[bold blue]Building image:[/bold blue] {image_tag}")
     console.print()
-    
+
     def progress(line: str) -> None:
         # Filter noisy docker build output
         if line.startswith("#") or "--->" in line or "Removing" in line:
@@ -510,7 +550,7 @@ def build(ctx: click.Context, tag: str | None, force: bool) -> None:
             console.print(f"[green]{line}[/green]")
         elif "ERROR" in line or "error" in line.lower():
             console.print(f"[red]{line}[/red]")
-    
+
     try:
         run_async(builder.build(image_tag, progress_callback=progress))
         console.print()

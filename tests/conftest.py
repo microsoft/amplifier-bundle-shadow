@@ -292,28 +292,30 @@ class ShadowAssertions:
     @staticmethod
     async def assert_url_rewritten(env, github_url: str, expected_gitea_pattern: str):
         """Assert that a GitHub URL is rewritten to Gitea."""
-        exit_code, stdout, stderr = await env.exec(
+        result = await env.exec(
             f'git config --global --get-regexp "url.*insteadOf" | grep "{github_url}"'
         )
-        assert exit_code == 0, (
-            f"URL {github_url} not rewritten. stdout={stdout}, stderr={stderr}"
+        assert result.exit_code == 0, (
+            f"URL {github_url} not rewritten. stdout={result.stdout}, stderr={result.stderr}"
         )
-        assert expected_gitea_pattern in stdout, (
-            f"Expected {expected_gitea_pattern} in {stdout}"
+        assert expected_gitea_pattern in result.stdout, (
+            f"Expected {expected_gitea_pattern} in {result.stdout}"
         )
 
     @staticmethod
     async def assert_file_exists_in_shadow(env, path: str):
         """Assert that a file exists inside the shadow container."""
-        exit_code, _, _ = await env.exec(f"test -f {path}")
-        assert exit_code == 0, f"File {path} does not exist in shadow"
+        result = await env.exec(f"test -f {path}")
+        assert result.exit_code == 0, f"File {path} does not exist in shadow"
 
     @staticmethod
     async def assert_file_contains(env, path: str, content: str):
         """Assert that a file in the shadow contains specific content."""
-        exit_code, stdout, _ = await env.exec(f"cat {path}")
-        assert exit_code == 0, f"Failed to read {path}"
-        assert content in stdout, f"Expected '{content}' in {path}, got: {stdout}"
+        result = await env.exec(f"cat {path}")
+        assert result.exit_code == 0, f"Failed to read {path}"
+        assert content in result.stdout, (
+            f"Expected '{content}' in {path}, got: {result.stdout}"
+        )
 
 
 @pytest.fixture

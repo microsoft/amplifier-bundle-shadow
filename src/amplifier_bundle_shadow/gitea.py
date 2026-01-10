@@ -15,11 +15,13 @@ __all__ = ["GiteaClient", "GiteaError", "GiteaTimeoutError"]
 
 class GiteaError(Exception):
     """Raised when Gitea operations fail."""
+
     pass
 
 
 class GiteaTimeoutError(GiteaError):
     """Raised when Gitea doesn't become ready in time."""
+
     pass
 
 
@@ -27,47 +29,45 @@ class GiteaTimeoutError(GiteaError):
 class GiteaClient:
     """
     Gitea API client that operates within a container.
-    
+
     All operations are executed via container exec since Gitea
     runs inside the shadow container on localhost:3000.
     """
-    
+
     runtime: "ContainerRuntime"
     container: str
     base_url: str = "http://localhost:3000"
     username: str = "shadow"
     password: str = "shadow"
-    
+
     async def wait_ready(self, timeout: float = 30.0) -> None:
         """Wait for Gitea to be ready AND admin user to exist."""
         start = asyncio.get_event_loop().time()
-        
+
         while True:
             elapsed = asyncio.get_event_loop().time() - start
             if elapsed >= timeout:
-                raise GiteaTimeoutError(
-                    f"Gitea did not become ready within {timeout}s"
-                )
-            
+                raise GiteaTimeoutError(f"Gitea did not become ready within {timeout}s")
+
             # First check if Gitea API responds
             code, stdout, _ = await self._exec(
                 f"curl -s {self.base_url}/api/v1/version"
             )
-            
+
             if code != 0 or "version" not in stdout:
                 await asyncio.sleep(0.5)
                 continue
-            
+
             # Then verify admin user exists (entrypoint creates it after Gitea starts)
             auth_code, auth_stdout, _ = await self._exec(
                 f"curl -s -u {self.username}:{self.password} {self.base_url}/api/v1/user"
             )
-            
+
             if auth_code == 0 and '"login"' in auth_stdout:
                 return
-            
+
             await asyncio.sleep(0.5)
-    
+
     async def create_org(self, org_name: str) -> bool:
         """Create an organization (idempotent)."""
         code, stdout, _ = await self._curl_api(
@@ -75,10 +75,10 @@ class GiteaClient:
             "/api/v1/orgs",
             {"username": org_name},
         )
-        
+
         # 201 = created, 422 = already exists
         return code == 201
-    
+
     async def create_repo(self, org: str, name: str) -> dict:
         """Create a repository under an organization."""
         code, stdout, stderr = await self._curl_api(
@@ -86,15 +86,15 @@ class GiteaClient:
             f"/api/v1/orgs/{org}/repos",
             {"name": name, "private": False},
         )
-        
+
         if code not in (200, 201):
             raise GiteaError(f"Failed to create repo {org}/{name}: {stdout}")
-        
+
         try:
             return json.loads(stdout)
         except json.JSONDecodeError:
             return {"name": name, "org": org}
-    
+
     async def push_bundle(
         self,
         org: str,
@@ -102,16 +102,16 @@ class GiteaClient:
         bundle_container_path: str,
     ) -> None:
         """Push a git bundle to a Gitea repository.
-        
+
         IMPORTANT: The bundle may contain remote tracking refs (refs/remotes/origin/*)
         that have commits not in any local branch. We need to push ALL commits so that
         pinned commit hashes from lock files can be resolved.
-        
+
         CHALLENGE: When you `git clone --bare` a bundle:
         - Only refs/heads/* are created in the clone
         - refs/remotes/origin/* are DROPPED completely
-        
-        SOLUTION: 
+
+        SOLUTION:
         1. Parse bundle refs using `git bundle list-heads`
         2. Create bare repo and fetch each ref explicitly
         3. Create _upstream_* branches for refs/remotes/origin/* refs
@@ -133,10 +133,10 @@ git push origin --all --force 2>&1 && \
 git push origin --tags --force 2>&1
 """
         code, stdout, stderr = await self._exec(commands.strip())
-        
+
         if code != 0:
             raise GiteaError(f"Failed to push bundle: {stdout} {stderr}")
-    
+
     async def setup_repo_from_bundle(
         self,
         org: str,
@@ -147,11 +147,11 @@ git push origin --tags --force 2>&1
         await self.create_org(org)
         await self.create_repo(org, name)
         await self.push_bundle(org, name, bundle_container_path)
-    
+
     async def _exec(self, command: str) -> tuple[int, str, str]:
         """Execute command in container via runtime."""
         return await self.runtime.exec(self.container, command)
-    
+
     async def _curl_api(
         self,
         method: str,
@@ -162,23 +162,23 @@ git push origin --tags --force 2>&1
         cmd = f"curl -s -w '\\n%{{http_code}}' -X {method}"
         cmd += f" -u {self.username}:{self.password}"
         cmd += " -H 'Content-Type: application/json'"
-        
+
         if data:
             json_data = json.dumps(data).replace("'", "'\\''")
             cmd += f" -d '{json_data}'"
-        
+
         cmd += f" {self.base_url}{endpoint}"
-        
+
         code, stdout, stderr = await self._exec(cmd)
-        
+
         # Parse HTTP status code from output
-        lines = stdout.strip().split('\n')
+        lines = stdout.strip().split("\n")
         if len(lines) >= 1:
             try:
                 http_code = int(lines[-1])
-                body = '\n'.join(lines[:-1])
+                body = "\n".join(lines[:-1])
                 return http_code, body, stderr
             except ValueError:
                 pass
-        
+
         return code, stdout, stderr

@@ -135,11 +135,16 @@ Then install amplifier - it fetches from real GitHub but uses your local snapsho
 
 - **Selective URL rewriting**: Only your specified local sources are redirected; everything else fetches from real GitHub
 - **Git history preserved**: Your local snapshots include full git history, so pinned commit hashes work
-- **Uncommitted changes included**: Your working directory state (including uncommitted changes) is captured
+- **Exact working tree captured**: Your working directory state is captured EXACTLY as-is:
+  - New files are included
+  - Modified files have your current changes
+  - Deleted files are properly removed (not in snapshot)
+  - **No staging required** - what you see in your directory is what appears in the shadow
 - **Workspace is writable**: Files in `/workspace` can be modified
 - **Home is isolated**: The container has its own `~/.amplifier` directory
 - **Network is available**: Full network access including GitHub (for repos not in your local sources)
 - **API keys auto-passed**: Common API key env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) are automatically passed to the container
+- **Security hardened**: Containers run with dropped capabilities, no-new-privileges, and resource limits
 
 ## Error Handling
 

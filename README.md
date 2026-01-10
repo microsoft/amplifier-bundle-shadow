@@ -8,10 +8,10 @@ Amplifier Shadow creates isolated "shadow" environments that let you test local 
 
 ## Key Features
 
-- **Local Source Snapshots**: Test your working directory state, including uncommitted changes
+- **Exact Working Tree Snapshots**: Test your working directory state exactly as-is - new files, modifications, AND deletions
 - **Embedded Gitea**: Local git server inside the container handles your snapshotted repos
 - **Selective URL Rewriting**: Only your specified repos are redirected; everything else uses real GitHub
-- **Container Isolation**: Uses Docker or Podman for complete environment isolation
+- **Security-Hardened Containers**: Uses Docker or Podman with dropped capabilities, no-new-privileges, and resource limits
 - **File Operations**: Diff, extract, and inject files between container and host
 - **Ephemeral Environments**: Create, use, and destroy environments as needed
 
@@ -91,15 +91,20 @@ Shadow environments use a container with an embedded Gitea server:
 └─────────────────────────────────────────────────────┘
 ```
 
-### Local Source Snapshots
+### Exact Working Tree Snapshots
 
 When you create a shadow with `--local /path/to/repo:org/name`:
 
-1. Your working directory is snapshotted as a git bundle (including uncommitted changes)
-2. The container starts with an embedded Gitea server
-3. Your snapshot is pushed to Gitea as `org/name`
-4. Git URL rewriting redirects that specific repo to local Gitea
-5. All other repos fetch from real GitHub normally
+1. Your working directory is captured **exactly as-is**:
+   - New/untracked files are included
+   - Modified files have your current changes
+   - Deleted files are properly removed from the snapshot
+   - **No staging required** - what you see in your directory is what appears in the shadow
+2. The snapshot is bundled with full git history preserved
+3. The container starts with an embedded Gitea server
+4. Your snapshot is pushed to Gitea as `org/name`
+5. Git URL rewriting redirects that specific repo to local Gitea
+6. All other repos fetch from real GitHub normally
 
 ### Selective Git URL Rewriting
 

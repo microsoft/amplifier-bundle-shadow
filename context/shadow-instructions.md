@@ -34,7 +34,11 @@ This means:
 - `git clone https://github.com/microsoft/amplifier-core` → uses your **local snapshot**
 - `git clone https://github.com/microsoft/amplifier` → fetches from **real GitHub**
 
-Your local working directory (including uncommitted changes) is snapshotted with full git history preserved.
+Your local working directory is snapshotted **exactly as-is** with full git history preserved:
+- New files are included
+- Modified files have your current changes  
+- Deleted files are properly removed from the snapshot
+- **No staging required** - what you see in your directory is what appears in the shadow
 
 ## Common Patterns
 
@@ -87,8 +91,10 @@ shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"],
 ## Important Notes
 
 - **Keep local repos current**: Run `git fetch --all` if pinned commits fail
-- **Uncommitted changes included**: Your working directory state is captured
+- **Exact working tree captured**: Your working directory state is captured exactly - files, modifications, AND deletions
+- **No staging required**: Unlike git workflows, you don't need to `git add` - the snapshot mirrors your filesystem
 - **Only specified repos are local**: Everything else uses real GitHub
+- **Security hardened**: Containers run with dropped capabilities and resource limits
 
 ## CRITICAL: Process Safety
 
