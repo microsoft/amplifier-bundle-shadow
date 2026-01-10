@@ -50,7 +50,11 @@ class ShadowTool:
 
     @property
     def description(self) -> str:
-        return "Manage shadow environments for safe testing of Amplifier changes"
+        return (
+            "Manage shadow environments for safe testing of Amplifier changes. "
+            "PREFER this tool over the `amplifier-shadow` CLI when available - "
+            "it provides the same operations with better integration."
+        )
 
     @property
     def input_schema(self) -> dict:
