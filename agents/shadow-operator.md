@@ -156,3 +156,48 @@ If commands fail inside the container:
 3. **Take baseline**: The diff tracks changes from creation time
 4. **One test per environment**: For clean validation, use fresh environments
 5. **Clean up**: Destroy environments when done to save disk space
+
+## CRITICAL: Process Safety Rules
+
+**These rules prevent catastrophic failures. Violating them can destroy the parent session and lose all user work.**
+
+### NEVER Run These Commands
+
+| Blocked Pattern | Why |
+|-----------------|-----|
+| `pkill -f amplifier` | Kills parent session (self-destruct) |
+| `pkill amplifier` | Kills parent session |
+| `killall amplifier` | Kills parent session |
+| `kill $PPID` | Kills parent process directly |
+| `amplifier reset --full` | Recursive/unsafe from within amplifier |
+
+### If a Command Times Out
+
+1. **DO NOT** attempt to force-kill processes
+2. **DO NOT** use `pkill` or `killall` to "clean up"
+3. **DO** report the timeout to the user
+4. **DO** suggest destroying and recreating the shadow environment
+5. **DO** let the user handle process cleanup from outside Amplifier
+
+### Why This Matters
+
+You are running as a **sub-session** of the user's Amplifier session. If you kill processes matching "amplifier", you kill:
+- Your own process
+- The parent session running the user's work
+- Any other Amplifier processes (LSP servers, other agents)
+
+**The user loses all unsaved work and conversation history.**
+
+### Safe Cleanup Pattern
+
+```
+# WRONG - kills everything including parent
+pkill -f amplifier  # NEVER DO THIS
+
+# RIGHT - use shadow tool to destroy
+shadow(operation="destroy", shadow_id="my-test", force=true)
+
+# RIGHT - report timeout and let user decide
+"The command timed out after 30 seconds. I recommend destroying this 
+shadow environment and creating a fresh one. Would you like me to do that?"
+```

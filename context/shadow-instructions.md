@@ -89,3 +89,21 @@ shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"],
 - **Keep local repos current**: Run `git fetch --all` if pinned commits fail
 - **Uncommitted changes included**: Your working directory state is captured
 - **Only specified repos are local**: Everything else uses real GitHub
+
+## CRITICAL: Process Safety
+
+**NEVER run these commands - they will kill the parent session:**
+
+```bash
+# DANGEROUS - kills parent Amplifier session
+pkill -f amplifier   # NEVER
+pkill amplifier      # NEVER
+killall amplifier    # NEVER
+```
+
+**If a command times out:**
+1. Report the timeout to the user
+2. Use `shadow(operation="destroy", ...)` to clean up
+3. Let the user handle any host-side cleanup
+
+Running `pkill -f amplifier` from within Amplifier is a **self-destruct command** that kills the parent session, loses all user work, and terminates the conversation.
