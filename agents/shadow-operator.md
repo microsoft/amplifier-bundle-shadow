@@ -172,36 +172,83 @@ amplifier provider install --force
 
 The `-q` (quiet) flag is ideal for CI/CD and automated shadow testing.
 
-### Non-Interactive Mode
+### Non-Interactive CLI Reference
 
-Shadow environments often need non-interactive operation. Use:
+Shadow environments require non-interactive operation. Here's the complete reference:
+
+#### Running Prompts
 
 ```bash
-# Single prompt, no chat loop
+# Single prompt execution (no chat loop)
 amplifier run "your prompt here"
 
 # Explicit single mode
 amplifier run --mode single "your prompt here"
+
+# With specific bundle
+amplifier run -B foundation "your prompt here"
+
+# With specific provider/model
+amplifier run -p anthropic -m claude-sonnet-4-20250514 "your prompt"
+
+# JSON output for parsing
+amplifier run --output-format json "your prompt"
+
+# Full execution trace (debugging)
+amplifier run --output-format json-trace "your prompt"
 ```
 
-### Direct Provider Configuration
-
-Instead of interactive `amplifier provider use X`, configure directly in settings:
+#### Configuration Commands (All Non-Interactive)
 
 ```bash
-# Create settings directory
+# Set active bundle
+amplifier bundle use foundation
+
+# Configure provider (non-interactive with flags)
+amplifier provider use anthropic --model claude-sonnet-4-20250514
+
+# Add allowed write directory
+amplifier allowed-dirs add /workspace
+
+# Add source override for local development
+amplifier source add my-module /path/to/module
+```
+
+#### Direct Settings File
+
+For full automation, write settings.yaml directly:
+
+```bash
 mkdir -p ~/.amplifier
 
-# Write settings.yaml directly
 cat > ~/.amplifier/settings.yaml << 'EOF'
 providers:
   - module: provider-anthropic
     config:
       model: claude-sonnet-4-20250514
+
+# Optional: specify bundle
+bundle: foundation
+
+# Optional: allowed write paths
+tools:
+  tool-filesystem:
+    allowed_write_paths:
+      - /workspace
 EOF
 ```
 
 **Note**: API keys are auto-passed to shadow via environment variables (ANTHROPIC_API_KEY, etc.).
+
+#### Commands That Are NOT Non-Interactive
+
+Avoid these in shadow environments:
+
+| Command | Why | Alternative |
+|---------|-----|-------------|
+| `amplifier` (no args) | Starts interactive chat | `amplifier run "prompt"` |
+| `amplifier init` | Interactive wizard | Write settings.yaml directly |
+| `amplifier provider use X` (no flags) | May prompt for config | Add `--model` flag |
 
 ### Common Shadow Testing Pattern
 
