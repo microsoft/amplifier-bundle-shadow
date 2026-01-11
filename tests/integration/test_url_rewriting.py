@@ -97,6 +97,84 @@ class TestURLRewriting:
         # The implementation should handle .git suffix variations
 
 
+class TestPrefixCollision:
+    """Test that URL rewriting doesn't cause prefix collision bugs.
+
+    This is a CRITICAL test - git's insteadOf uses PREFIX matching, so
+    a repo named "amplifier" would incorrectly match "amplifier-profiles"
+    if we don't use boundary markers in our patterns.
+    """
+
+    @pytest.mark.asyncio
+    async def test_similar_repo_names_not_colliding(self, live_shadow_env):
+        """P0 Regression: 'amplifier' should NOT prefix-match 'amplifier-profiles'.
+
+        If local source is 'amplifier', accessing 'amplifier-profiles' should
+        NOT be rewritten to local Gitea - it should pass through to real GitHub.
+        """
+        env = live_shadow_env
+
+        # Get the current URL rewriting config
+        result = await env.exec('git config --global --get-regexp "url.*insteadOf"')
+        assert result.exit_code == 0, f"No URL config: {result.stderr}"
+
+        # Parse the config to understand what patterns are registered
+        config_output = result.stdout
+
+        # Check that all patterns have boundary markers
+        # Valid boundaries: .git, /, @
+        lines = config_output.strip().split("\n")
+        for line in lines:
+            if "insteadOf" in line.lower() and "github.com" in line:
+                # Extract the pattern being rewritten (after "insteadOf ")
+                # Format: url.http://localhost:3000/org/repo.git.insteadOf https://github.com/org/repo.git
+                parts = line.split("insteadOf")
+                if len(parts) >= 2:
+                    github_pattern = parts[1].strip()
+                    # Pattern should end with a boundary marker
+                    assert (
+                        github_pattern.endswith(".git")
+                        or github_pattern.endswith("/")
+                        or github_pattern.endswith("@")
+                        or ".git/" in github_pattern
+                    ), (
+                        f"URL pattern lacks boundary marker (vulnerable to prefix collision): "
+                        f"{github_pattern}\n"
+                        f"Full line: {line}"
+                    )
+
+    @pytest.mark.asyncio
+    async def test_no_bare_repo_patterns(self, live_shadow_env):
+        """Verify no bare patterns like 'github.com/org/repo' without boundary."""
+        env = live_shadow_env
+
+        result = await env.exec('git config --global --get-regexp "url.*insteadOf"')
+        assert result.exit_code == 0
+
+        # Look for patterns that end with just the repo name (no .git, /, or @)
+        import re
+
+        # Pattern: github.com/org/reponame without .git or / or @ after
+        bare_pattern = re.compile(r"github\.com/[^/]+/[a-zA-Z0-9_-]+(?![./@])")
+
+        matches = bare_pattern.findall(result.stdout)
+        # Filter out false positives (patterns that continue with .git, /, @)
+        actual_bare = []
+        for match in matches:
+            # Check if this is actually bare (not followed by boundary)
+            if match in result.stdout:
+                idx = result.stdout.find(match)
+                after = result.stdout[idx + len(match) : idx + len(match) + 5]
+                if not after.startswith((".git", "/", "@")):
+                    actual_bare.append(match)
+
+        assert len(actual_bare) == 0, (
+            f"Found bare URL patterns without boundary markers: {actual_bare}\n"
+            f"These are vulnerable to prefix collision bugs.\n"
+            f"Full config:\n{result.stdout}"
+        )
+
+
 class TestGiteaSetup:
     """Test that Gitea is properly configured inside the shadow."""
 

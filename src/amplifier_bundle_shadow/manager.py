@@ -279,22 +279,28 @@ class ShadowManager:
             )
 
             # Rewrite various GitHub URL formats to local Gitea
-            # IMPORTANT: git insteadOf uses PREFIX matching, so we need variants
-            # to handle trailing slashes and different URL formats that tools use
+            # CRITICAL: git insteadOf uses PREFIX matching!
+            # We ONLY include patterns with boundary markers (.git, /, @) to prevent
+            # repos like "amplifier-profiles" from matching when "amplifier" is local.
+            # Example bug: "amplifier" pattern would prefix-match "amplifier-profiles"
             patterns = [
-                # HTTPS variants (most common for uv/pip/cargo)
-                f"https://github.com/{spec.org}/{spec.name}",
-                f"https://github.com/{spec.org}/{spec.name}/",  # Trailing slash
+                # HTTPS variants with boundaries (most common for uv/pip/cargo)
                 f"https://github.com/{spec.org}/{spec.name}.git",
                 f"https://github.com/{spec.org}/{spec.name}.git/",
-                # SSH variants
-                f"git@github.com:{spec.org}/{spec.name}",
+                f"https://github.com/{spec.org}/{spec.name}/",  # Trailing slash = boundary
+                f"https://github.com/{spec.org}/{spec.name}@",  # @ref syntax = boundary
+                # SSH variants with boundaries
                 f"git@github.com:{spec.org}/{spec.name}.git",
-                f"ssh://git@github.com/{spec.org}/{spec.name}",
+                f"git@github.com:{spec.org}/{spec.name}/",
+                f"git@github.com:{spec.org}/{spec.name}@",
                 f"ssh://git@github.com/{spec.org}/{spec.name}.git",
-                # git+ prefix variants (used in pyproject.toml dependencies)
-                f"git+https://github.com/{spec.org}/{spec.name}",
-                f"git+ssh://git@github.com/{spec.org}/{spec.name}",
+                f"ssh://git@github.com/{spec.org}/{spec.name}/",
+                f"ssh://git@github.com/{spec.org}/{spec.name}@",
+                # git+ prefix variants with boundaries (pyproject.toml dependencies)
+                f"git+https://github.com/{spec.org}/{spec.name}.git",
+                f"git+https://github.com/{spec.org}/{spec.name}@",  # git+https://...@main
+                f"git+ssh://git@github.com/{spec.org}/{spec.name}.git",
+                f"git+ssh://git@github.com/{spec.org}/{spec.name}@",
             ]
 
             for pattern in patterns:

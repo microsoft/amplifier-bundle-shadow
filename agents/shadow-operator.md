@@ -145,3 +145,82 @@ amplifier-shadow destroy my-test --force
 "The command timed out after 30 seconds. I recommend destroying this 
 shadow environment and creating a fresh one. Would you like me to do that?"
 ```
+
+---
+
+## Running Amplifier Inside Shadow Environments
+
+When testing Amplifier itself inside a shadow, you need to understand how it initializes:
+
+### Provider Installation
+
+Providers are NOT installed until you run `amplifier` for the first time. The installation happens via:
+- `amplifier` (first run triggers init)
+- `amplifier init` (explicit initialization)
+- `amplifier run "prompt"` (also triggers init)
+
+**In a fresh shadow**, run `amplifier init` first to install providers before trying to use them.
+
+### Non-Interactive Mode
+
+Shadow environments often need non-interactive operation. Use:
+
+```bash
+# Single prompt, no chat loop
+amplifier run "your prompt here"
+
+# Explicit single mode
+amplifier run --mode single "your prompt here"
+```
+
+### Direct Provider Configuration
+
+Instead of interactive `amplifier provider use X`, configure directly in settings:
+
+```bash
+# Create settings directory
+mkdir -p ~/.amplifier
+
+# Write settings.yaml directly
+cat > ~/.amplifier/settings.yaml << 'EOF'
+providers:
+  - module: provider-anthropic
+    config:
+      model: claude-sonnet-4-20250514
+EOF
+```
+
+**Note**: API keys are auto-passed to shadow via environment variables (ANTHROPIC_API_KEY, etc.).
+
+### Common Shadow Testing Pattern
+
+```bash
+# 1. Install Amplifier with your local changes
+uv tool install git+https://github.com/microsoft/amplifier
+
+# 2. Initialize (installs providers)
+amplifier init
+
+# 3. Test non-interactively
+amplifier run "Hello, verify you're working"
+
+# 4. Or test specific functionality
+amplifier run "List your available tools"
+```
+
+### Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| "No providers configured" | Haven't run init | Run `amplifier init` |
+| "Provider X not found" | Module not installed | Run `amplifier init` or `pip install amplifier-module-provider-X` |
+| Interactive prompt hangs | Using chat mode | Use `amplifier run "prompt"` instead |
+| "No backend available" | No API key | Check ANTHROPIC_API_KEY etc. are set |
+
+---
+
+## Quick Reference
+
+For quick lookup of operations, patterns, and isolation guarantees:
+
+@shadow:context/shadow-instructions.md
