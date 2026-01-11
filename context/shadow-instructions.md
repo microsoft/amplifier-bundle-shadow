@@ -50,7 +50,12 @@ shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"])
 
 # Install amplifier - it uses YOUR local amplifier-core
 shadow.exec(shadow_id, "uv tool install git+https://github.com/microsoft/amplifier")
-shadow.exec(shadow_id, "amplifier --version")
+
+# Install providers (quiet mode for automation)
+shadow.exec(shadow_id, "amplifier provider install -q")
+
+# Test it works
+shadow.exec(shadow_id, 'amplifier run "Hello, confirm you are working"')
 ```
 
 ### Test Multi-Repo Changes

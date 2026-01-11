@@ -154,12 +154,20 @@ When testing Amplifier itself inside a shadow, you need to understand how it ini
 
 ### Provider Installation
 
-Providers are NOT installed until you run `amplifier` for the first time. The installation happens via:
-- `amplifier` (first run triggers init)
-- `amplifier init` (explicit initialization)
-- `amplifier run "prompt"` (also triggers init)
+Providers must be installed before use. Use the dedicated install command:
 
-**In a fresh shadow**, run `amplifier init` first to install providers before trying to use them.
+```bash
+# Install all known providers (recommended for shadow setup)
+amplifier provider install -q
+
+# Install specific providers only
+amplifier provider install anthropic openai
+
+# Force reinstall if needed
+amplifier provider install --force
+```
+
+The `-q` (quiet) flag is ideal for CI/CD and automated shadow testing.
 
 ### Non-Interactive Mode
 
@@ -198,8 +206,8 @@ EOF
 # 1. Install Amplifier with your local changes
 uv tool install git+https://github.com/microsoft/amplifier
 
-# 2. Initialize (installs providers)
-amplifier init
+# 2. Install providers (silent mode for automation)
+amplifier provider install -q
 
 # 3. Test non-interactively
 amplifier run "Hello, verify you're working"
@@ -212,8 +220,8 @@ amplifier run "List your available tools"
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| "No providers configured" | Haven't run init | Run `amplifier init` |
-| "Provider X not found" | Module not installed | Run `amplifier init` or `pip install amplifier-module-provider-X` |
+| "No providers configured" | Providers not installed | Run `amplifier provider install -q` |
+| "Provider X not found" | Specific module not installed | Run `amplifier provider install X` |
 | Interactive prompt hangs | Using chat mode | Use `amplifier run "prompt"` instead |
 | "No backend available" | No API key | Check ANTHROPIC_API_KEY etc. are set |
 
