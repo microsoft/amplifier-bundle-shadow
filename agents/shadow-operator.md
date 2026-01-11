@@ -54,6 +54,9 @@ amplifier-shadow extract test-env /workspace/file.py ./file.py
 # Inject file into container
 amplifier-shadow inject test-env ./file.py /workspace/file.py
 
+# Add more local sources to existing shadow
+amplifier-shadow add-source test-env /path/to/another-repo:org/another-repo
+
 # Destroy environment
 amplifier-shadow destroy test-env --force
 ```

@@ -64,7 +64,7 @@ class ShadowTool:
             "properties": {
                 "operation": {
                     "type": "string",
-                    "enum": ["create", "exec", "diff", "extract", "inject", "list", "status", "destroy"],
+                    "enum": ["create", "add-source", "exec", "diff", "extract", "inject", "list", "status", "destroy"],
                     "description": "The operation to perform",
                 },
                 "local_sources": {
@@ -118,6 +118,7 @@ class ShadowTool:
 
         operations = {
             "create": self._create,
+            "add-source": self._add_source,
             "exec": self._exec,
             "diff": self._diff,
             "extract": self._extract,
@@ -173,6 +174,34 @@ class ShadowTool:
                     for r in env.repos
                 ],
                 "status": env.status.value,
+            },
+            error=None,
+        )
+
+    async def _add_source(self, input: dict[str, Any]) -> ToolResult:
+        """Add local sources to an existing shadow environment."""
+        shadow_id = input.get("shadow_id")
+        local_sources = input.get("local_sources")
+
+        if not shadow_id:
+            return ToolResult(output=None, error={"message": "shadow_id is required"})
+        if not local_sources:
+            return ToolResult(
+                output=None,
+                error={"message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]"},
+            )
+
+        env = await self.manager.add_source(shadow_id, local_sources)
+
+        return ToolResult(
+            output={
+                "shadow_id": env.shadow_id,
+                "local_sources": [
+                    {"repo": r.full_name, "local_path": str(r.local_path) if r.local_path else None}
+                    for r in env.repos
+                ],
+                "status": env.status.value,
+                "message": f"Added {len(local_sources)} source(s) to shadow environment",
             },
             error=None,
         )

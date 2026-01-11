@@ -7,6 +7,7 @@ You have access to the `amplifier-shadow` tool for creating isolated test enviro
 | Operation | Description |
 |-----------|-------------|
 | `create` | Create shadow environment with local source snapshots |
+| `add-source` | Add local sources to an existing shadow |
 | `exec` | Run command inside sandbox |
 | `diff` | Show changed files |
 | `extract` | Copy file from sandbox to host |

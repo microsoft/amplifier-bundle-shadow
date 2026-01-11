@@ -197,6 +197,93 @@ class ShadowManager:
         # Try to load from disk
         return self._load_from_disk(shadow_id)
 
+    async def add_source(
+        self,
+        shadow_id: str,
+        local_sources: list[str],
+    ) -> ShadowEnvironment:
+        """Add local sources to an existing shadow environment.
+
+        This allows you to add more local repos to a running shadow without
+        destroying and recreating it.
+
+        Args:
+            shadow_id: ID of the existing shadow environment
+            local_sources: List of "path:org/repo" strings to add
+
+        Returns:
+            Updated ShadowEnvironment
+
+        Raises:
+            ValueError: If shadow doesn't exist or isn't running
+        """
+        # Get existing environment
+        env = self.get(shadow_id)
+        if env is None:
+            raise ValueError(f"Shadow environment not found: {shadow_id}")
+
+        # Parse new source specs
+        new_specs = [RepoSpec.parse(src) for src in local_sources]
+
+        # Check for duplicates
+        existing_repos = {(r.org, r.name) for r in env.repos}
+        for spec in new_specs:
+            if (spec.org, spec.name) in existing_repos:
+                raise ValueError(
+                    f"Source {spec.org}/{spec.name} already exists in shadow"
+                )
+
+        # Create snapshots for new sources
+        snapshots_dir = env.shadow_dir / "snapshots"
+        snapshots_dir.mkdir(exist_ok=True)
+
+        for spec in new_specs:
+            bundle_path = snapshots_dir / f"{spec.org}_{spec.name}.bundle"
+            self.snapshot_manager.create_snapshot(spec.local_path, bundle_path)
+
+        # Copy bundles into container and push to Gitea
+        gitea = GiteaClient(self.runtime, env.container_name)
+
+        for spec in new_specs:
+            bundle_path = snapshots_dir / f"{spec.org}_{spec.name}.bundle"
+            container_bundle_path = f"/tmp/{spec.org}_{spec.name}.bundle"
+
+            # Copy bundle into container
+            await self.runtime.copy_to(
+                env.container_name,
+                str(bundle_path),
+                container_bundle_path,
+            )
+
+            # Push to Gitea
+            await gitea.setup_repo_from_bundle(
+                spec.org,
+                spec.name,
+                container_bundle_path,
+            )
+
+        # Add git URL rewriting for new sources
+        await self._configure_git_rewriting(env.container_name, new_specs)
+
+        # Clear uv cache so new sources are picked up on next install
+        await self.runtime.exec(
+            env.container_name,
+            "rm -rf ~/.cache/uv/git-v0 2>/dev/null || true",
+        )
+
+        # Update environment with new repos
+        env.repos.extend(new_specs)
+
+        # Update metadata on disk
+        self._write_metadata(
+            env.shadow_dir,
+            shadow_id,
+            env.repos,
+            image=None,  # Keep existing image
+        )
+
+        return env
+
     def list_environments(self) -> list[ShadowEnvironment]:
         """List all shadow environments."""
         environments = []

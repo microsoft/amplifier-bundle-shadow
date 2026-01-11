@@ -49,6 +49,12 @@ class TestShadowManager:
         assert count == 0
 
     @pytest.mark.asyncio
+    async def test_add_source_nonexistent_shadow(self, manager):
+        """Test add_source raises for nonexistent shadow."""
+        with pytest.raises(ValueError, match="Shadow environment not found"):
+            await manager.add_source("nonexistent", ["/tmp/repo:org/name"])
+
+    @pytest.mark.asyncio
     async def test_create_duplicate_raises(self, manager):
         """Test create raises for duplicate environment name."""
         shadow_dir = manager.environments_dir / "test-dup"
