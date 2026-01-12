@@ -103,15 +103,17 @@ class ShadowManager:
         # Parse local source specs
         repo_specs = [RepoSpec.parse_local(ls) for ls in local_sources]
 
-        # Create snapshots of local repositories
+        # Create snapshots of local repositories and capture commit SHAs
         snapshot_mgr = SnapshotManager(snapshots_dir)
         for spec in repo_specs:
             if spec.local_path:
-                await snapshot_mgr.create_snapshot(
+                snapshot_result = await snapshot_mgr.create_snapshot(
                     local_path=spec.local_path,
                     org=spec.org,
                     name=spec.name,
                 )
+                # Store the commit SHA for observability
+                spec.snapshot_commit = snapshot_result.commit_sha
 
         # Ensure image exists (auto-build if needed)
         builder = ImageBuilder(self.runtime)
@@ -176,11 +178,11 @@ class ShadowManager:
             shutil.rmtree(shadow_dir)
             raise RuntimeError(f"Failed to setup shadow environment: {e}") from e
 
-        # Write metadata
-        self._write_metadata(shadow_dir, shadow_id, repo_specs, image)
+        # Write metadata (include env_vars for observability)
+        self._write_metadata(shadow_dir, shadow_id, repo_specs, image, container_env)
 
         # Create environment object
-        env = ShadowEnvironment(
+        shadow_env = ShadowEnvironment(
             shadow_id=shadow_id,
             container_name=container_name,
             repos=repo_specs,
@@ -188,15 +190,16 @@ class ShadowManager:
             runtime=self.runtime,
             created_at=datetime.now(),
             status=ShadowStatus.READY,
+            env_vars=container_env,
         )
 
         # Take baseline snapshot for diff tracking
-        env.snapshot_baseline()
+        shadow_env.snapshot_baseline()
 
         # Cache it
-        self._environments[shadow_id] = env
+        self._environments[shadow_id] = shadow_env
 
-        return env
+        return shadow_env
 
     def get(self, shadow_id: str) -> ShadowEnvironment | None:
         """Get an active shadow environment by ID."""
@@ -453,23 +456,31 @@ class ShadowManager:
         shadow_dir: Path,
         shadow_id: str,
         repos: list[RepoSpec],
-        image: str,
+        image: str | None,
+        env_vars: dict[str, str] | None = None,
     ) -> None:
         """Write metadata file for the shadow environment."""
         local_sources = []
         for r in repos:
-            source_info = {"repo": r.full_name}
+            source_info: dict[str, str | None] = {"repo": r.full_name}
             if r.local_path:
                 source_info["local_path"] = str(r.local_path)
+            if r.snapshot_commit:
+                source_info["snapshot_commit"] = r.snapshot_commit
             local_sources.append(source_info)
 
-        metadata = {
+        metadata: dict[str, object] = {
             "shadow_id": shadow_id,
             "container_name": f"shadow-{shadow_id}",
             "local_sources": local_sources,
-            "image": image,
             "created_at": datetime.now().isoformat(),
         }
+        if image:
+            metadata["image"] = image
+        if env_vars:
+            # Store env var names only (not values) for observability
+            metadata["env_vars_passed"] = list(env_vars.keys())
+
         metadata_path = shadow_dir / "metadata.json"
         metadata_path.write_text(json.dumps(metadata, indent=2))
 

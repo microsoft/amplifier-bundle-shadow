@@ -45,6 +45,7 @@ class RepoSpec:
     name: str
     branch: str | None = None
     local_path: Path | None = None  # Local source path (for --local option)
+    snapshot_commit: str | None = None  # HEAD commit captured in snapshot
 
     @property
     def full_name(self) -> str:
@@ -149,9 +150,11 @@ class ShadowInfo:
     status: str
     created_at: str
     shadow_dir: str
+    snapshot_commits: dict[str, str] | None = None  # repo -> commit SHA
+    env_vars_passed: list[str] | None = None  # env var names (not values)
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "shadow_id": self.shadow_id,
             "repos": self.repos,
             "mode": self.mode,
@@ -159,3 +162,8 @@ class ShadowInfo:
             "created_at": self.created_at,
             "shadow_dir": self.shadow_dir,
         }
+        if self.snapshot_commits:
+            result["snapshot_commits"] = self.snapshot_commits
+        if self.env_vars_passed:
+            result["env_vars_passed"] = self.env_vars_passed
+        return result

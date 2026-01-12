@@ -179,11 +179,27 @@ def create(
     console.print("[green]Shadow environment ready![/green]")
     console.print(f"  ID: [bold]{shadow_env.shadow_id}[/bold]")
     console.print("  Mode: container")
-    if env_vars:
-        console.print(f"  Environment: {len(env_vars)} variable(s) passed")
-    console.print("  Local sources:")
+
+    # Show what was captured with commit SHAs for verification
+    console.print()
+    console.print("[bold]Local sources snapshotted:[/bold]")
     for r in shadow_env.repos:
-        console.print(f"    - {r.full_name} <- {r.local_path}")
+        commit = r.snapshot_commit or "unknown"
+        console.print(f"  {r.full_name} @ [cyan]{commit[:8]}[/cyan]")
+        console.print(f"    from: {r.local_path}")
+
+    # Show env vars passed (names only, not values)
+    if env_vars:
+        console.print()
+        console.print(f"[bold]Environment variables passed:[/bold] {len(env_vars)}")
+        console.print(f"  {', '.join(sorted(env_vars.keys()))}")
+
+    # Verification hint
+    console.print()
+    console.print(
+        "[dim]Tip: After install, compare commit hashes with uv output to verify local code is used.[/dim]"
+    )
+
     console.print()
     console.print("Next steps:")
     console.print(
@@ -340,6 +356,21 @@ def status(ctx: click.Context, shadow_id: str) -> None:
     console.print("  Repositories:")
     for repo in info.repos:
         console.print(f"    - {repo}")
+
+    # Show snapshot commits for verification
+    if info.snapshot_commits:
+        console.print()
+        console.print("[bold]Local Sources (for verification):[/bold]")
+        for repo, commit in info.snapshot_commits.items():
+            console.print(f"  {repo}")
+            console.print(f"    Snapshot HEAD: [cyan]{commit[:8]}[/cyan]")
+
+    # Show env vars passed
+    if info.env_vars_passed:
+        console.print()
+        console.print(
+            f"[bold]Environment Variables:[/bold] {', '.join(info.env_vars_passed)}"
+        )
 
 
 @main.command()

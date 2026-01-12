@@ -41,6 +41,44 @@ Your local working directory is snapshotted **exactly as-is** with full git hist
 - Deleted files are properly removed from the snapshot
 - **No staging required** - what you see in your directory is what appears in the shadow
 
+## Verifying Local Sources Are Used
+
+After creating a shadow with local sources, you need to **verify** your local code is actually being used:
+
+### Step 1: Check snapshot commits (from create/status output)
+
+```python
+# Create returns snapshot_commits showing what was captured
+result = shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"])
+# Output includes:
+#   snapshot_commits: {"microsoft/amplifier-core": "abc1234..."}
+#   env_vars_passed: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
+
+# Or check existing shadow
+result = shadow.status(shadow_id)
+# Shows snapshot_commits for verification
+```
+
+### Step 2: Compare with uv output during install
+
+```python
+# When you install, uv shows the commit hash it resolved
+shadow.exec(shadow_id, "uv tool install git+https://github.com/microsoft/amplifier")
+# Look for: amplifier-core @ git+...@abc1234
+
+# If the commit matches snapshot_commits, your local code is being used!
+```
+
+### Step 3: Verify API keys are available
+
+```python
+# Don't assume - verify!
+shadow.exec(shadow_id, "env | grep -E 'ANTHROPIC|OPENAI|API_KEY'")
+# Should show your API keys are present
+```
+
+**Key insight**: The `create` and `status` operations now return `snapshot_commits` so you can verify the exact commit that was captured from your local repo.
+
 ## Common Patterns
 
 ### Test Local Changes

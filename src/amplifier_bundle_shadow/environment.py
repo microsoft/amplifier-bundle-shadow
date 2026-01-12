@@ -35,6 +35,7 @@ class ShadowEnvironment:
     runtime: "ContainerRuntime"
     created_at: datetime
     status: ShadowStatus = ShadowStatus.READY
+    env_vars: dict[str, str] | None = None  # Environment variables passed to container
     _baseline_hashes: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -233,6 +234,16 @@ class ShadowEnvironment:
 
     def to_info(self) -> ShadowInfo:
         """Convert to a serializable info object."""
+        # Build snapshot_commits dict from local_sources
+        snapshot_commits = {
+            repo.full_name: repo.snapshot_commit
+            for repo in self.repos
+            if repo.snapshot_commit
+        }
+
+        # Get env var names (not values) that were passed
+        env_vars_passed = list(self.env_vars.keys()) if self.env_vars else []
+
         return ShadowInfo(
             shadow_id=self.shadow_id,
             repos=[r.display_name for r in self.repos],
@@ -240,4 +251,6 @@ class ShadowEnvironment:
             status=self.status.value,
             created_at=self.created_at.isoformat(),
             shadow_dir=str(self.shadow_dir),
+            snapshot_commits=snapshot_commits if snapshot_commits else None,
+            env_vars_passed=env_vars_passed if env_vars_passed else None,
         )
