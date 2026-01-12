@@ -1,6 +1,6 @@
 # Shadow Environment Instructions
 
-You have access to the `amplifier-shadow` tool for creating isolated test environments for any git-based project.
+You have access to the `shadow` tool for creating OS-level isolated container environments for safe testing. Optionally, snapshot local git repositories to test uncommitted changes before pushing.
 
 ## Quick Reference
 

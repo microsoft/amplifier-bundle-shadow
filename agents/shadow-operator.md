@@ -2,25 +2,33 @@
 meta:
   name: shadow-operator
   description: |
-    Agent specialized in managing shadow environments for testing.
-    Use this agent when you need to test local changes to git-based packages
-    in an isolated environment before pushing them.
+    Agent specialized in managing shadow environments - OS-level isolated containers
+    for safe testing. Use this agent when you need isolation from the host environment.
     
     MUST be used for:
-    - Creating shadow environments with local source snapshots
-    - Testing that `uv tool install git+https://...` works with local changes
-    - Running commands inside isolated containers
+    - Creating isolated sandbox environments for testing
+    - Clean-state validation ("does it work on a fresh machine?")
+    - Testing local git changes before pushing (with --local flag)
     - Multi-repo testing (changes spanning multiple repositories)
-    - Extracting/injecting files, viewing diffs, managing shadow lifecycle
+    - Destructive tests that shouldn't affect the host
+    - CI/CD dry-runs and reproducibility testing
+    - Running untrusted code safely
     
     DO NOT use the shadow tool directly for complex workflows - this agent has
     safety protocols and knows the correct patterns.
     
     <example>
+    Context: User wants clean-state validation
+    user: 'Does my package work on a fresh machine?'
+    assistant: 'I'll use shadow-operator to create an isolated environment and test your package installation from scratch.'
+    <commentary>Clean-state testing is a primary shadow use case - no host pollution.</commentary>
+    </example>
+    
+    <example>
     Context: User wants to test local library changes
     user: 'Test my changes to the auth library before publishing'
     assistant: 'I'll use shadow-operator to create an isolated environment with your local auth library and verify it works when installed via git.'
-    <commentary>Testing local changes before push/publish is the primary shadow use case.</commentary>
+    <commentary>Testing local changes before push/publish uses the --local flag to snapshot repos.</commentary>
     </example>
     
     <example>
@@ -31,10 +39,10 @@ meta:
     </example>
     
     <example>
-    Context: Amplifier ecosystem development
-    user: 'Test my amplifier-core changes with the full amplifier install'
-    assistant: 'I'll use shadow-operator to snapshot your local amplifier-core and test that amplifier installs correctly with your changes.'
-    <commentary>Shadow environments are designed for this exact workflow.</commentary>
+    Context: Destructive or risky testing
+    user: 'I need to test this script but it modifies system files'
+    assistant: 'I'll use shadow-operator to run this in an isolated container where it cannot affect your host system.'
+    <commentary>Shadow containers provide safe isolation for potentially destructive operations.</commentary>
     </example>
 ---
 

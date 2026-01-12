@@ -1,16 +1,19 @@
 # Amplifier Shadow
 
-Container-based isolated environments for safely testing local changes to any git-based packages.
+OS-level isolated container environments for safe testing.
 
 ## Overview
 
-Amplifier Shadow creates isolated "shadow" environments that let you test local changes to git-based packages before pushing them. Your local working directories (including uncommitted changes) are snapshotted and served via an embedded Gitea server, while everything else fetches from real GitHub.
+Amplifier Shadow creates isolated "shadow" environments - containerized sandboxes for testing without affecting your host system. Optionally, snapshot local git repositories to test uncommitted changes before pushing.
 
 **Use cases:**
-- Test library changes before publishing
-- Validate multi-repo changes work together
-- CI/CD dry-runs with local modifications
-- Amplifier ecosystem development
+- **Clean-state validation** - "Does it work on a fresh machine?"
+- **Destructive testing** - Tests that modify system state won't affect host
+- **Local git changes** - Test library changes before publishing (with `--local` flag)
+- **Multi-repo testing** - Validate coordinated changes work together
+- **CI/CD dry-runs** - See what CI will see
+- **Dependency isolation** - Test with specific versions without polluting host
+- **Security testing** - Run untrusted code safely
 
 ## Key Features
 
