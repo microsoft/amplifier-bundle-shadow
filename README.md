@@ -1,10 +1,16 @@
 # Amplifier Shadow
 
-Container-based isolated environments for safely testing Amplifier ecosystem changes.
+Container-based isolated environments for safely testing local changes to any git-based packages.
 
 ## Overview
 
-Amplifier Shadow creates isolated "shadow" environments that let you test local changes to Amplifier ecosystem packages before deploying them. Your local working directories (including uncommitted changes) are snapshotted and served via an embedded Gitea server, while everything else fetches from real GitHub.
+Amplifier Shadow creates isolated "shadow" environments that let you test local changes to git-based packages before pushing them. Your local working directories (including uncommitted changes) are snapshotted and served via an embedded Gitea server, while everything else fetches from real GitHub.
+
+**Use cases:**
+- Test library changes before publishing
+- Validate multi-repo changes work together
+- CI/CD dry-runs with local modifications
+- Amplifier ecosystem development
 
 ## Key Features
 
@@ -47,16 +53,16 @@ The shadow tool will automatically detect and use podman if available, falling b
 ## Quick Start
 
 ```bash
-# Create a shadow with your local amplifier-core changes
-amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core
+# Create a shadow with your local library changes
+amplifier-shadow create --local ~/repos/my-library:myorg/my-library
 
-# Inside the shadow, install amplifier normally
-# -> amplifier fetches from REAL GitHub
-# -> amplifier-core uses YOUR LOCAL snapshot
-amplifier-shadow exec shadow-abc123 "uv pip install git+https://github.com/microsoft/amplifier"
+# Inside the shadow, install via git URL
+# -> my-library uses YOUR LOCAL snapshot
+# -> all other dependencies fetch from REAL GitHub
+amplifier-shadow exec shadow-abc123 "uv pip install git+https://github.com/myorg/my-library"
 
-# Test it
-amplifier-shadow exec shadow-abc123 "amplifier --version"
+# Run tests
+amplifier-shadow exec shadow-abc123 "cd /workspace && pytest"
 
 # See what changed
 amplifier-shadow diff shadow-abc123
@@ -75,20 +81,20 @@ amplifier-shadow destroy shadow-abc123
 Shadow environments use a container with an embedded Gitea server:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Shadow Container                                   │
-│  ┌─────────────────────────────────────────────┐   │
-│  │  Gitea Server (localhost:3000)              │   │
-│  │  - microsoft/amplifier-core (your snapshot) │   │
-│  │  - microsoft/amplifier-foundation           │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                     │
-│  Git URL Rewriting:                                │
-│  github.com/microsoft/amplifier-core → Gitea      │
-│  github.com/microsoft/amplifier → Real GitHub     │
-│                                                     │
-│  /workspace (your working directory)               │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  Shadow Container                                       │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  Gitea Server (localhost:3000)                  │   │
+│  │  - myorg/my-library (your snapshot)             │   │
+│  │  - myorg/other-lib (if specified)               │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Git URL Rewriting:                                     │
+│  github.com/myorg/my-library → Gitea (local)           │
+│  github.com/myorg/other-repo → Real GitHub             │
+│                                                         │
+│  /workspace (your working directory)                    │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Exact Working Tree Snapshots
@@ -111,13 +117,13 @@ When you create a shadow with `--local /path/to/repo:org/name`:
 Inside the container, git config rewrites URLs only for your local sources:
 
 ```
-[url "http://shadow:shadow@localhost:3000/microsoft/amplifier-core.git"]
-    insteadOf = https://github.com/microsoft/amplifier-core
+[url "http://shadow:shadow@localhost:3000/myorg/my-library.git"]
+    insteadOf = https://github.com/myorg/my-library
 ```
 
 This means:
-- `git clone https://github.com/microsoft/amplifier-core` → uses your local snapshot
-- `git clone https://github.com/microsoft/amplifier` → fetches from real GitHub
+- `git clone https://github.com/myorg/my-library` → uses your local snapshot
+- `git clone https://github.com/myorg/other-repo` → fetches from real GitHub
 
 ## CLI Commands
 
@@ -127,7 +133,7 @@ This means:
 | `exec` | Execute a command inside a shadow |
 | `shell` | Open interactive shell in shadow |
 | `list` | List all shadow environments |
-| `status` | Show status of an environment |
+| `status` | Show status of an environment (includes snapshot commits) |
 | `diff` | Show changed files |
 | `extract` | Copy file from shadow to host |
 | `inject` | Copy file from host to shadow |
@@ -144,90 +150,61 @@ This means:
 
 ## Common Patterns
 
-### Test a Single Module
+### Test a Single Library
 
 ```bash
-# Testing your module with the real amplifier stack
-amplifier-shadow create --local ~/repos/my-module:myorg/my-module --name module-test
+# Testing your library with its dependents
+amplifier-shadow create --local ~/repos/my-library:myorg/my-library --name lib-test
 
 # Clone and test inside shadow
-amplifier-shadow exec module-test "
+amplifier-shadow exec lib-test "
   cd /workspace && 
-  git clone https://github.com/myorg/my-module &&
-  cd my-module &&
+  git clone https://github.com/myorg/my-library &&
+  cd my-library &&
   uv venv && . .venv/bin/activate &&
   uv pip install -e '.[dev]' &&
   pytest
 "
 ```
 
+### Test Multi-Repo Changes
+
+```bash
+# Testing changes across multiple repos
+amplifier-shadow create \
+    --local ~/repos/core-lib:myorg/core-lib \
+    --local ~/repos/cli-tool:myorg/cli-tool \
+    --name multi-test
+
+# Both local sources will be used
+amplifier-shadow exec multi-test "uv pip install git+https://github.com/myorg/cli-tool"
+```
+
 ### Test a PR/Branch Against Main
 
 ```bash
 # Your feature branch is snapshotted; all other deps use main from GitHub
-amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name pr-test
+amplifier-shadow create --local ~/repos/my-lib:myorg/my-lib --name pr-test
 
-# Install full stack - only amplifier-core uses your local changes
-amplifier-shadow exec pr-test "uv pip install git+https://github.com/microsoft/amplifier"
-```
-
-### Full Stack Integration Test
-
-```bash
-# Test changes across the entire Amplifier stack
-amplifier-shadow create \
-    --local ~/repos/amplifier-core:microsoft/amplifier-core \
-    --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
-    --local ~/repos/amplifier-app-cli:microsoft/amplifier-app-cli \
-    --name full-stack
-
-amplifier-shadow exec full-stack "uv pip install git+https://github.com/microsoft/amplifier"
-amplifier-shadow exec full-stack "amplifier --help"
+# Install - only my-lib uses your local changes
+amplifier-shadow exec pr-test "uv pip install git+https://github.com/myorg/my-app"
 ```
 
 ### Iterate on Failures
 
 ```bash
 # 1. Create shadow and run tests
-amplifier-shadow create --local ~/repos/my-module:org/my-module --name test
+amplifier-shadow create --local ~/repos/my-lib:myorg/my-lib --name test
 amplifier-shadow exec test "cd /workspace && git clone ... && pytest"
 
 # 2. Tests fail - fix locally on host
 
 # 3. Destroy and recreate (picks up your local changes)
 amplifier-shadow destroy test
-amplifier-shadow create --local ~/repos/my-module:org/my-module --name test
+amplifier-shadow create --local ~/repos/my-lib:myorg/my-lib --name test
 amplifier-shadow exec test "cd /workspace && git clone ... && pytest"
 
 # 4. Tests pass - commit with confidence!
-```
-
-## Use Cases
-
-### Testing Local Changes
-
-```bash
-# You're working on amplifier-core and want to test the full install flow
-amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name test-core
-
-# Install amplifier - it will use your local amplifier-core changes
-amplifier-shadow exec test-core "uv pip install git+https://github.com/microsoft/amplifier"
-
-# Run tests or use amplifier
-amplifier-shadow exec test-core "amplifier run"
-```
-
-### Testing Multi-Repo Changes
-
-```bash
-# Testing changes across multiple repos
-amplifier-shadow create \
-    --local ~/repos/amplifier-core:microsoft/amplifier-core \
-    --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
-    --name multi-test
-
-# Both local sources will be used, amplifier itself fetches from GitHub
-amplifier-shadow exec multi-test "uv pip install git+https://github.com/microsoft/amplifier"
 ```
 
 ### Interactive Development
@@ -237,33 +214,56 @@ amplifier-shadow exec multi-test "uv pip install git+https://github.com/microsof
 amplifier-shadow shell test-env
 
 # Inside the shadow shell:
-$ uv pip install git+https://github.com/microsoft/amplifier
-$ amplifier --version
+$ uv pip install git+https://github.com/myorg/my-lib
+$ python -c "import mylib; print(mylib.__version__)"
 $ exit
 
 # Back on host - extract any files you created
 amplifier-shadow extract test-env /workspace/notes.txt ./notes.txt
 ```
 
-## When to Use Shadow vs Source Overrides
+## Amplifier Ecosystem Examples
 
-Amplifier offers two approaches for testing local changes:
+When developing Amplifier itself or its ecosystem packages:
 
-| Approach | Command | Use When |
-|----------|---------|----------|
-| **Shadow Environment** | `amplifier-shadow create --local ...` | Testing installation flow, clean environment needed, multi-repo testing |
-| **Source Override** | `amplifier source add org/repo /path` | Quick iteration, testing module loading, no container overhead |
+```bash
+# Test amplifier-core changes
+amplifier-shadow create --local ~/repos/amplifier-core:microsoft/amplifier-core --name core-test
 
-**Shadow environments** are best when you need:
-- Complete isolation from your host environment
-- To test the full `git clone` → `pip install` flow
-- To verify your changes work in a clean container
-- To test multiple interdependent repos together
+# Install amplifier - it will use your local amplifier-core
+amplifier-shadow exec core-test "uv tool install git+https://github.com/microsoft/amplifier"
 
-**Source overrides** are best when you need:
-- Fast iteration without container startup
-- To test module loading and registration
-- Quick validation before full shadow testing
+# Install providers and test
+amplifier-shadow exec core-test "amplifier provider install -q"
+amplifier-shadow exec core-test "amplifier run 'Hello, verify you work'"
+```
+
+Full stack integration test:
+
+```bash
+amplifier-shadow create \
+    --local ~/repos/amplifier-core:microsoft/amplifier-core \
+    --local ~/repos/amplifier-foundation:microsoft/amplifier-foundation \
+    --local ~/repos/amplifier-app-cli:microsoft/amplifier-app-cli \
+    --name full-stack
+
+amplifier-shadow exec full-stack "uv tool install git+https://github.com/microsoft/amplifier"
+amplifier-shadow exec full-stack "amplifier --help"
+```
+
+## Verifying Local Sources Are Used
+
+After creating a shadow, verify your local code is actually being used:
+
+```bash
+# Check what was captured
+amplifier-shadow status my-shadow
+# Shows: snapshot_commits: {"myorg/my-lib": "abc1234..."}
+
+# Compare with install output - commits should match!
+amplifier-shadow exec my-shadow "uv pip install git+https://github.com/myorg/my-lib"
+# Look for: my-lib @ git+...@abc1234
+```
 
 ## Troubleshooting
 
