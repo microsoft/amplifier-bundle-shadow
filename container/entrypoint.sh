@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Force uv to use git (respects our URL rewriting instead of GitHub API fast path)
+export UV_NO_GITHUB_FAST_PATH=1
+
 # Start Gitea in background
 echo "Starting Gitea..."
 gitea web --config /etc/gitea/app.ini &

@@ -88,11 +88,12 @@ shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"],
 
 ## Isolation Guarantees
 
-- **Filesystem**: Only `/workspace` and home directory are writable
+- **Filesystem**: Only `/workspace` and home directory are writable inside container
 - **Network**: Full access (including GitHub for repos not in your local sources)
-- **Processes**: Isolated via Bubblewrap (Linux) or Seatbelt (macOS)
-- **Environment**: Fresh `AMPLIFIER_HOME`, isolated git config
+- **Processes**: Isolated via Docker/Podman containers
+- **Environment**: Fresh `AMPLIFIER_HOME`, isolated git config, API keys auto-passed
 - **Git history**: Preserved from your local repos (pinned commits work)
+- **Gitea server**: Embedded git server hosts your local repo snapshots
 
 ## Important Notes
 
