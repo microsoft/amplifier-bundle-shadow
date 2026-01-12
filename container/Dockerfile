@@ -45,6 +45,8 @@ ENV GITEA_WORK_DIR=/var/lib/gitea
 ENV USER=amplifier
 # Include uv tool bin directory in PATH so installed tools are immediately usable
 ENV PATH="/home/amplifier/.local/bin:${PATH}"
+# Force uv to use git (respects our URL rewriting instead of GitHub API fast path)
+ENV UV_NO_GITHUB_FAST_PATH=1
 
 # Run as amplifier user
 USER amplifier

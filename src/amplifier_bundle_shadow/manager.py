@@ -20,6 +20,13 @@ __all__ = ["ShadowManager", "DEFAULT_IMAGE"]
 # Default shadow container image (local build)
 DEFAULT_IMAGE = DEFAULT_IMAGE_NAME
 
+# Environment variables always passed to shadow containers
+# UV_NO_GITHUB_FAST_PATH: Force uv to use git instead of GitHub API fast path.
+# This ensures uv respects our .gitconfig URL rewriting for local sources.
+DEFAULT_ENV_VARS = {
+    "UV_NO_GITHUB_FAST_PATH": "1",
+}
+
 
 class ShadowManager:
     """
@@ -126,12 +133,15 @@ class ShadowManager:
             Mount(workspace_dir, "/workspace", readonly=False),
         ]
 
+        # Merge default env vars with user-provided ones (user overrides defaults)
+        container_env = {**DEFAULT_ENV_VARS, **(env or {})}
+
         try:
             await self.runtime.run(
                 image=image,
                 name=container_name,
                 mounts=mounts,
-                env=env,
+                env=container_env,
                 detach=True,
             )
         except Exception as e:
@@ -367,10 +377,15 @@ class ShadowManager:
 
             # Rewrite various GitHub URL formats to local Gitea
             # CRITICAL: git insteadOf uses PREFIX matching!
-            # We ONLY include patterns with boundary markers (.git, /, @) to prevent
-            # repos like "amplifier-profiles" from matching when "amplifier" is local.
-            # Example bug: "amplifier" pattern would prefix-match "amplifier-profiles"
+            # The bare URL pattern (without suffix) is needed because uv strips @ref
+            # before calling git. This has collision risk: if "amplifier" is local,
+            # it would also match "amplifier-profiles". We accept this tradeoff
+            # because shadow environments are for testing specific repos, not general use.
+            # Patterns with boundary markers (.git, /, @) are safer but don't catch all cases.
             patterns = [
+                # Bare URL (highest risk of prefix collision, but needed for uv)
+                # uv strips @ref suffix before calling git, leaving bare URL
+                f"https://github.com/{spec.org}/{spec.name}",
                 # HTTPS variants with boundaries (most common for uv/pip/cargo)
                 f"https://github.com/{spec.org}/{spec.name}.git",
                 f"https://github.com/{spec.org}/{spec.name}.git/",
