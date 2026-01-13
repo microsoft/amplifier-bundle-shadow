@@ -444,11 +444,15 @@ class ShadowTool:
 
         # Check 1: Container is running
         is_running = await env.is_running()
-        checks.append({
-            "name": "Container running",
-            "passed": is_running,
-            "message": "Container is running" if is_running else "Container not running",
-        })
+        checks.append(
+            {
+                "name": "Container running",
+                "passed": is_running,
+                "message": "Container is running"
+                if is_running
+                else "Container not running",
+            }
+        )
         if not is_running:
             all_passed = False
             return ToolResult(
@@ -462,13 +466,19 @@ class ShadowTool:
             )
 
         # Check 2: Gitea server is accessible
-        gitea_result = await env.exec("curl -sf http://localhost:3000/api/v1/version", timeout=10)
+        gitea_result = await env.exec(
+            "curl -sf http://localhost:3000/api/v1/version", timeout=10
+        )
         gitea_ok = gitea_result.exit_code == 0
-        checks.append({
-            "name": "Gitea server",
-            "passed": gitea_ok,
-            "message": "Gitea running on localhost:3000" if gitea_ok else "Gitea not accessible",
-        })
+        checks.append(
+            {
+                "name": "Gitea server",
+                "passed": gitea_ok,
+                "message": "Gitea running on localhost:3000"
+                if gitea_ok
+                else "Gitea not accessible",
+            }
+        )
         if not gitea_ok:
             all_passed = False
 
@@ -477,11 +487,15 @@ class ShadowTool:
             repo_check_cmd = f"curl -sf http://shadow:shadow@localhost:3000/api/v1/repos/{repo.org}/{repo.name}"
             repo_result = await env.exec(repo_check_cmd, timeout=10)
             repo_ok = repo_result.exit_code == 0
-            checks.append({
-                "name": f"Repo mirrored: {repo.full_name}",
-                "passed": repo_ok,
-                "message": f"{repo.full_name} available in Gitea" if repo_ok else f"{repo.full_name} not found in Gitea",
-            })
+            checks.append(
+                {
+                    "name": f"Repo mirrored: {repo.full_name}",
+                    "passed": repo_ok,
+                    "message": f"{repo.full_name} available in Gitea"
+                    if repo_ok
+                    else f"{repo.full_name} not found in Gitea",
+                }
+            )
             if not repo_ok:
                 all_passed = False
 
@@ -494,12 +508,16 @@ class ShadowTool:
         for tool_name, tool_cmd in tools_to_check:
             tool_result = await env.exec(tool_cmd, timeout=10)
             tool_ok = tool_result.exit_code == 0
-            version = tool_result.stdout.strip().split("\n")[0] if tool_ok else "not found"
-            checks.append({
-                "name": f"Tool: {tool_name}",
-                "passed": tool_ok,
-                "message": version if tool_ok else f"{tool_name} not installed",
-            })
+            version = (
+                tool_result.stdout.strip().split("\n")[0] if tool_ok else "not found"
+            )
+            checks.append(
+                {
+                    "name": f"Tool: {tool_name}",
+                    "passed": tool_ok,
+                    "message": version if tool_ok else f"{tool_name} not installed",
+                }
+            )
             if not tool_ok:
                 all_passed = False
 
@@ -507,7 +525,9 @@ class ShadowTool:
         api_keys_found: list[str] = []
         api_keys_missing: list[str] = []
         for key in DEFAULT_ENV_PATTERNS:
-            key_result = await env.exec(f"test -n \"${{{key}}}\" && echo 'set'", timeout=5)
+            key_result = await env.exec(
+                f"test -n \"${{{key}}}\" && echo 'set'", timeout=5
+            )
             if key_result.exit_code == 0 and "set" in key_result.stdout:
                 api_keys_found.append(key)
             else:
@@ -515,27 +535,39 @@ class ShadowTool:
 
         # At least one API key should be present
         has_api_key = len(api_keys_found) > 0
-        checks.append({
-            "name": "API keys",
-            "passed": has_api_key,
-            "message": f"Found: {', '.join(api_keys_found)}" if api_keys_found else "No API keys found",
-            "details": {
-                "found": api_keys_found,
-                "missing": api_keys_missing,
-            },
-        })
+        checks.append(
+            {
+                "name": "API keys",
+                "passed": has_api_key,
+                "message": f"Found: {', '.join(api_keys_found)}"
+                if api_keys_found
+                else "No API keys found",
+                "details": {
+                    "found": api_keys_found,
+                    "missing": api_keys_missing,
+                },
+            }
+        )
         if not has_api_key:
             all_passed = False
 
         # Check 6: Git URL rewriting configured
-        git_config_result = await env.exec('git config --global --get-regexp "url.*insteadOf"', timeout=10)
-        rewrite_ok = git_config_result.exit_code == 0 and "insteadOf" in git_config_result.stdout
-        rewrite_count = git_config_result.stdout.count("insteadOf") if rewrite_ok else 0
-        checks.append({
-            "name": "Git URL rewriting",
-            "passed": rewrite_ok,
-            "message": f"{rewrite_count} insteadOf rules configured" if rewrite_ok else "No URL rewriting configured",
-        })
+        # Note: git config outputs "insteadof" (lowercase), not "insteadOf"
+        git_config_result = await env.exec(
+            'git config --global --get-regexp "url.*insteadOf"', timeout=10
+        )
+        stdout_lower = git_config_result.stdout.lower()
+        rewrite_ok = git_config_result.exit_code == 0 and "insteadof" in stdout_lower
+        rewrite_count = stdout_lower.count("insteadof") if rewrite_ok else 0
+        checks.append(
+            {
+                "name": "Git URL rewriting",
+                "passed": rewrite_ok,
+                "message": f"{rewrite_count} insteadOf rules configured"
+                if rewrite_ok
+                else "No URL rewriting configured",
+            }
+        )
         if not rewrite_ok:
             all_passed = False
 
@@ -544,7 +576,9 @@ class ShadowTool:
                 "shadow_id": shadow_id,
                 "passed": all_passed,
                 "checks": checks,
-                "message": "All pre-flight checks passed" if all_passed else "Some checks failed - review before testing",
+                "message": "All pre-flight checks passed"
+                if all_passed
+                else "Some checks failed - review before testing",
             },
             error=None,
         )
