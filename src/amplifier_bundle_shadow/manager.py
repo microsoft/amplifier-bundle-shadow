@@ -23,8 +23,11 @@ DEFAULT_IMAGE = DEFAULT_IMAGE_NAME
 # Environment variables always passed to shadow containers
 # UV_NO_GITHUB_FAST_PATH: Force uv to use git instead of GitHub API fast path.
 # This ensures uv respects our .gitconfig URL rewriting for local sources.
+# UV_CACHE_DIR: Isolate uv cache per shadow to prevent stale cached packages
+# from bypassing local source resolution.
 DEFAULT_ENV_VARS = {
     "UV_NO_GITHUB_FAST_PATH": "1",
+    "UV_CACHE_DIR": "/tmp/uv-cache",
 }
 
 
@@ -149,7 +152,27 @@ class ShadowManager:
         except Exception as e:
             # Cleanup on failure
             shutil.rmtree(shadow_dir)
-            raise RuntimeError(f"Failed to start container: {e}") from e
+            error_msg = str(e)
+            # Provide actionable guidance based on error type
+            if "docker" in error_msg.lower() or "podman" in error_msg.lower():
+                raise RuntimeError(
+                    f"Failed to start container: {e}\n\n"
+                    "Troubleshooting:\n"
+                    "  1. Ensure Docker or Podman is installed and running\n"
+                    "  2. Check if the Docker daemon is accessible: docker info\n"
+                    "  3. Verify you have permission to run containers\n"
+                    "  4. Try: systemctl start docker (Linux) or open Docker Desktop"
+                ) from e
+            elif "image" in error_msg.lower() or "not found" in error_msg.lower():
+                raise RuntimeError(
+                    f"Failed to start container: {e}\n\n"
+                    "Troubleshooting:\n"
+                    f"  1. Build the image: amplifier-shadow build\n"
+                    f"  2. Or specify a different image: --image <your-image>\n"
+                    f"  3. Check available images: docker images | grep shadow"
+                ) from e
+            else:
+                raise RuntimeError(f"Failed to start container: {e}") from e
 
         # Wait for Gitea to be ready and set up repos
         try:
@@ -172,11 +195,44 @@ class ShadowManager:
             # Configure git URL rewriting
             await self._configure_git_rewriting(container_name, repo_specs)
 
+            # Auto-clone local sources to /workspace for convenience
+            # This saves users from manually cloning after shadow creation
+            for spec in repo_specs:
+                clone_url = (
+                    f"http://shadow:shadow@localhost:3000/{spec.org}/{spec.name}.git"
+                )
+                clone_dir = f"/workspace/{spec.org}/{spec.name}"
+                await self.runtime.exec(
+                    container_name,
+                    f"mkdir -p /workspace/{spec.org} && "
+                    f"git clone {clone_url} {clone_dir}",
+                )
+
         except Exception as e:
             # Cleanup on failure
             await self.runtime.remove(container_name, force=True)
             shutil.rmtree(shadow_dir)
-            raise RuntimeError(f"Failed to setup shadow environment: {e}") from e
+            error_msg = str(e)
+            # Provide actionable guidance based on error type
+            if "gitea" in error_msg.lower() or "timeout" in error_msg.lower():
+                raise RuntimeError(
+                    f"Failed to setup shadow environment: {e}\n\n"
+                    "Troubleshooting:\n"
+                    "  1. Gitea server may need more time to start\n"
+                    "  2. Check container logs: docker logs shadow-<id>\n"
+                    "  3. Ensure port 3000 is not in use by another service\n"
+                    "  4. Try recreating the shadow environment"
+                ) from e
+            elif "bundle" in error_msg.lower() or "clone" in error_msg.lower():
+                raise RuntimeError(
+                    f"Failed to setup shadow environment: {e}\n\n"
+                    "Troubleshooting:\n"
+                    "  1. Ensure local source paths are valid git repositories\n"
+                    "  2. Check that the repositories have commits to snapshot\n"
+                    "  3. Verify the repo format: /path/to/repo:org/name"
+                ) from e
+            else:
+                raise RuntimeError(f"Failed to setup shadow environment: {e}") from e
 
         # Write metadata (include env_vars for observability)
         self._write_metadata(shadow_dir, shadow_id, repo_specs, image, container_env)
@@ -250,29 +306,25 @@ class ShadowManager:
         snapshots_dir = env.shadow_dir / "snapshots"
         snapshots_dir.mkdir(exist_ok=True)
 
+        snapshot_mgr = SnapshotManager(snapshots_dir)
         for spec in new_specs:
-            bundle_path = snapshots_dir / f"{spec.org}_{spec.name}.bundle"
-            self.snapshot_manager.create_snapshot(spec.local_path, bundle_path)
+            if spec.local_path:
+                snapshot_result = await snapshot_mgr.create_snapshot(
+                    local_path=spec.local_path,
+                    org=spec.org,
+                    name=spec.name,
+                )
+                spec.snapshot_commit = snapshot_result.commit_sha
 
-        # Copy bundles into container and push to Gitea
+        # Push snapshots to Gitea
         gitea = GiteaClient(self.runtime, env.container_name)
 
         for spec in new_specs:
-            bundle_path = snapshots_dir / f"{spec.org}_{spec.name}.bundle"
-            container_bundle_path = f"/tmp/{spec.org}_{spec.name}.bundle"
-
-            # Copy bundle into container
-            await self.runtime.copy_to(
-                env.container_name,
-                str(bundle_path),
-                container_bundle_path,
-            )
-
-            # Push to Gitea
+            bundle_path = f"/snapshots/{spec.org}/{spec.name}.bundle"
             await gitea.setup_repo_from_bundle(
-                spec.org,
-                spec.name,
-                container_bundle_path,
+                org=spec.org,
+                name=spec.name,
+                bundle_container_path=bundle_path,
             )
 
         # Add git URL rewriting for new sources
@@ -505,6 +557,9 @@ class ShadowManager:
                 spec = RepoSpec.parse(source_info["repo"])
                 if "local_path" in source_info:
                     spec.local_path = Path(source_info["local_path"])
+                # Restore snapshot_commit from metadata (fixes observability bug)
+                if "snapshot_commit" in source_info:
+                    spec.snapshot_commit = source_info["snapshot_commit"]
                 repo_specs.append(spec)
             elif isinstance(source_info, str):
                 repo_specs.append(RepoSpec.parse(source_info))
