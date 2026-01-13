@@ -21,6 +21,21 @@ agents:
       packages in an isolated environment before deploying them.
     instructions: shadow:agents/shadow-operator.md
 
+  shadow-smoke-test:
+    description: |
+      Independent validation agent for shadow environment smoke testing.
+      Runs completely separate from the shadow-operator context to provide
+      unbiased verification that local changes work correctly.
+      
+      Use AFTER shadow-operator creates an environment to validate:
+      - Local sources are actually being used (not just configured)
+      - Packages install and import correctly
+      - Touched code paths execute successfully
+      - Shadow isolation is intact
+      
+      Returns objective VERDICT: PASS/FAIL with evidence.
+    instructions: shadow:agents/shadow-smoke-test.md
+
 # Context files
 context:
   include:

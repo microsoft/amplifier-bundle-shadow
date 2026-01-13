@@ -1,0 +1,121 @@
+# Shadow Smoke Test Recipe
+#
+# A complete workflow for creating a shadow environment, running independent
+# smoke tests, and cleaning up.
+#
+# Requirements:
+#   - shadow bundle (provides shadow-operator, shadow-smoke-test agents)
+#   - foundation bundle (provides zen-architect agent)
+#
+# Usage:
+#   amplifier tool invoke recipes operation=execute \
+#     recipe_path=shadow:recipes/shadow-smoke-test.yaml \
+#     context='{"local_repo_path": "~/repos/amplifier-core", "repo_name": "microsoft/amplifier-core"}'
+#
+# Or in a session:
+#   "Run the shadow smoke test recipe for my amplifier-core changes"
+
+name: shadow-smoke-test
+version: "1.0.0"
+description: |
+  Create a shadow environment with local source changes, run independent
+  smoke tests to validate the changes work correctly, and clean up.
+tags: ["testing", "shadow", "smoke-test", "validation"]
+
+# Input variables (simple context dictionary)
+context:
+  local_repo_path: ""       # Required: Path to local git repository with changes
+  repo_name: ""             # Required: GitHub repository identifier (org/name)
+  touched_files: []         # Optional: List of files that were changed
+  shadow_name: "smoke-test" # Optional: Name for the shadow environment
+
+steps:
+  # Step 1: Create the shadow environment
+  - id: create-shadow
+    agent: shadow:shadow-operator
+    prompt: |
+      Create a shadow environment for testing local changes.
+      
+      Local source: {{local_repo_path}}:{{repo_name}}
+      Shadow name: {{shadow_name}}
+      
+      Use the shadow tool to create the environment with the local source.
+      
+      Return JSON with this structure:
+      {
+        "shadow_id": "<the shadow environment ID>",
+        "snapshot_commits": {"<repo>": "<commit>"},
+        "env_vars_passed": ["<list of available API keys>"]
+      }
+    output: shadow_result
+    parse_json: true
+    timeout: 300
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+      initial_delay: 10
+
+  # Step 2: Run smoke tests
+  - id: smoke-test
+    agent: shadow:shadow-smoke-test
+    prompt: |
+      Run independent smoke tests on the shadow environment.
+      
+      Shadow ID: {{shadow_result.shadow_id}}
+      
+      Local sources to verify:
+        - repo: {{repo_name}}
+          local_path: {{local_repo_path}}
+          expected_commit: {{shadow_result.snapshot_commits}}
+      
+      Touched files to exercise:
+      {{touched_files}}
+      
+      Run the full validation rubric:
+      1. Source Verification (25 points) - Verify local sources are actually being used
+      2. Installation Health (20 points) - Verify packages install and import
+      3. Code Execution (30 points) - Exercise the touched code paths
+      4. Isolation Integrity (15 points) - Verify shadow isolation
+      5. No Regressions (10 points) - Verify existing functionality
+      
+      Return a detailed report with scores and VERDICT: PASS or VERDICT: FAIL.
+    output: test_result
+    timeout: 900
+
+  # Step 3: Clean up the shadow environment
+  - id: cleanup
+    agent: shadow:shadow-operator
+    prompt: |
+      Destroy the shadow environment to clean up resources.
+      
+      Shadow ID: {{shadow_result.shadow_id}}
+      
+      Use the shadow tool with operation=destroy and force=true.
+      Confirm the environment was successfully destroyed.
+    output: cleanup_result
+    timeout: 60
+    on_error: "continue"  # Always try cleanup, don't fail recipe
+
+  # Step 4: Generate final report
+  - id: final-report
+    agent: foundation:zen-architect
+    prompt: |
+      Generate a final summary report of the shadow smoke test.
+      
+      Shadow Environment:
+        ID: {{shadow_result.shadow_id}}
+        Local Source: {{repo_name}} from {{local_repo_path}}
+        Snapshot Commit: {{shadow_result.snapshot_commits}}
+      
+      Smoke Test Results:
+      {{test_result}}
+      
+      Cleanup Status:
+      {{cleanup_result}}
+      
+      Provide a concise summary:
+      1. What was tested
+      2. The verdict (PASS/FAIL)
+      3. Key findings
+      4. Any recommendations
+    output: final_report
