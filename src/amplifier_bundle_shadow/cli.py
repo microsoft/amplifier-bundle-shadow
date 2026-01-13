@@ -208,6 +208,69 @@ def create(
     console.print(f"  [dim]amplifier-shadow shell {shadow_env.shadow_id}[/dim]")
 
 
+@main.command("add-source")
+@click.argument("shadow_id")
+@click.option(
+    "--local",
+    "-l",
+    multiple=True,
+    required=True,
+    help="Local source mapping: /path/to/repo:org/name (can be repeated)",
+)
+@click.pass_context
+def add_source(ctx: click.Context, shadow_id: str, local: tuple[str, ...]) -> None:
+    """
+    Add local sources to an existing shadow environment.
+
+    This allows you to add more local repos to a running shadow without
+    destroying and recreating it.
+
+    SHADOW_ID: ID of the shadow environment
+
+    Examples:
+
+        # Add another local source to an existing shadow
+        amplifier-shadow add-source my-shadow --local ~/repos/new-lib:org/new-lib
+
+        # Add multiple sources at once
+        amplifier-shadow add-source my-shadow \\
+            --local ~/repos/lib1:org/lib1 \\
+            --local ~/repos/lib2:org/lib2
+    """
+    manager: ShadowManager = ctx.obj["manager"]
+
+    env = manager.get(shadow_id)
+    if not env:
+        error_console.print(
+            f"[red]Error:[/red] Shadow environment not found: {shadow_id}"
+        )
+        sys.exit(1)
+
+    # Check if container is running
+    if not run_async(env.is_running()):
+        error_console.print(f"[red]Error:[/red] Container not running for: {shadow_id}")
+        error_console.print("[dim]The container must be running to add sources.[/dim]")
+        sys.exit(1)
+
+    with console.status("[bold blue]Adding local sources..."):
+        try:
+            updated_env = run_async(manager.add_source(shadow_id, list(local)))
+        except ValueError as e:
+            error_console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+        except Exception as e:
+            error_console.print(f"[red]Error:[/red] {e}")
+            sys.exit(1)
+
+    console.print()
+    console.print("[green]Sources added successfully![/green]")
+    console.print()
+    console.print("[bold]All local sources:[/bold]")
+    for r in updated_env.repos:
+        commit = r.snapshot_commit or "unknown"
+        console.print(f"  {r.full_name} @ [cyan]{commit[:8]}[/cyan]")
+
+
 @main.command()
 @click.argument("shadow_id")
 @click.argument("command")

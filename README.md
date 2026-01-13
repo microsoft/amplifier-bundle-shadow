@@ -133,6 +133,7 @@ This means:
 | Command | Description |
 |---------|-------------|
 | `create` | Create a new shadow environment with local sources |
+| `add-source` | Add local sources to an existing shadow |
 | `exec` | Execute a command inside a shadow |
 | `shell` | Open interactive shell in shadow |
 | `list` | List all shadow environments |

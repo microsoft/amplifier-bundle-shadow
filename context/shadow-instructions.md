@@ -7,7 +7,7 @@ You have access to the `shadow` tool for creating OS-level isolated container en
 | Operation | Description |
 |-----------|-------------|
 | `create` | Create shadow environment with local source snapshots |
-| `add-source` | Add local sources to an existing shadow (tool API only, not CLI) |
+| `add-source` | Add local sources to an existing shadow |
 | `exec` | Run command inside sandbox |
 | `diff` | Show changed files |
 | `extract` | Copy file from sandbox to host |
