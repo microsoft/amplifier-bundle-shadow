@@ -380,15 +380,12 @@ class ShadowManager:
 
             # Rewrite various GitHub URL formats to local Gitea
             # CRITICAL: git insteadOf uses PREFIX matching!
-            # The bare URL pattern (without suffix) is needed because uv strips @ref
-            # before calling git. This has collision risk: if "amplifier" is local,
-            # it would also match "amplifier-profiles". We accept this tradeoff
-            # because shadow environments are for testing specific repos, not general use.
-            # Patterns with boundary markers (.git, /, @) are safer but don't catch all cases.
+            # We ONLY use patterns with boundary markers (.git, /, @) to prevent
+            # prefix collisions. For example, without boundaries, a pattern for
+            # "amplifier" would incorrectly match "amplifier-app-cli".
+            #
+            # DO NOT add bare URL patterns without boundary markers!
             patterns = [
-                # Bare URL (highest risk of prefix collision, but needed for uv)
-                # uv strips @ref suffix before calling git, leaving bare URL
-                f"https://github.com/{spec.org}/{spec.name}",
                 # HTTPS variants with boundaries (most common for uv/pip/cargo)
                 f"https://github.com/{spec.org}/{spec.name}.git",
                 f"https://github.com/{spec.org}/{spec.name}.git/",
@@ -443,8 +440,9 @@ class ShadowManager:
             )
 
         # Verify each repo has URL rewriting configured
+        # Check for a pattern with boundary marker (not bare URL to avoid prefix collision)
         for spec in local_repos:
-            expected_pattern = f"https://github.com/{spec.org}/{spec.name}"
+            expected_pattern = f"https://github.com/{spec.org}/{spec.name}.git"
             if expected_pattern not in stdout:
                 raise RuntimeError(
                     f"Git URL rewriting not configured for {spec.full_name}. "
