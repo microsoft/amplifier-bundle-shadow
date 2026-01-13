@@ -142,6 +142,7 @@ This means:
 | `inject` | Copy file from host to shadow |
 | `destroy` | Destroy an environment |
 | `destroy-all` | Destroy all environments |
+| `build` | Build the shadow container image locally |
 
 ### Create Options
 
@@ -150,6 +151,9 @@ This means:
 | `--local`, `-l` | Local source mapping: `/path/to/repo:org/name` (repeatable) |
 | `--name`, `-n` | Name for the environment (auto-generated if not provided) |
 | `--image`, `-i` | Container image to use (default: `amplifier-shadow:local`, auto-built if missing) |
+| `--env`, `-e` | Environment variable to pass: `KEY=VALUE` or `KEY` to inherit from host (repeatable) |
+| `--env-file` | File with environment variables (one per line) |
+| `--pass-api-keys/--no-pass-api-keys` | Auto-pass common API key env vars (default: enabled) |
 
 ## Common Patterns
 

@@ -7,7 +7,7 @@ You have access to the `shadow` tool for creating OS-level isolated container en
 | Operation | Description |
 |-----------|-------------|
 | `create` | Create shadow environment with local source snapshots |
-| `add-source` | Add local sources to an existing shadow |
+| `add-source` | Add local sources to an existing shadow (tool API only, not CLI) |
 | `exec` | Run command inside sandbox |
 | `diff` | Show changed files |
 | `extract` | Copy file from sandbox to host |
@@ -28,9 +28,11 @@ amplifier-shadow create --local ~/repos/my-library:myorg/my-library
 Git is configured to rewrite only that specific repo:
 
 ```
-[url "file:///repos/myorg/my-library.git"]
-    insteadOf = https://github.com/myorg/my-library
+[url "http://shadow:shadow@localhost:3000/myorg/my-library.git"]
+    insteadOf = https://github.com/myorg/my-library.git
 ```
+
+Note: Patterns always include boundary markers (`.git`, `/`, `@`) to prevent prefix collisions between similar repo names.
 
 This means:
 - `git clone https://github.com/myorg/my-library` → uses your **local snapshot**
