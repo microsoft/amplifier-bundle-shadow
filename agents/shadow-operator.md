@@ -2,6 +2,10 @@
 meta:
   name: shadow-operator
   description: |
+
+tools:
+  - module: tool-shadow
+    source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
     Agent specialized in managing shadow environments - OS-level isolated containers
     for safe testing. Use this agent when you need isolation from the host environment.
     

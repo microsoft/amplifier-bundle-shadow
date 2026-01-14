@@ -7,11 +7,6 @@ description: |
   Snapshots your local working directories and serves them as git dependencies
   via URL rewriting, while other repos fetch from real GitHub.
 
-# Tools provided by this bundle
-tools:
-  - module: tool-shadow
-    source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
-
 # Agents provided by this bundle
 agents:
   shadow-operator:
