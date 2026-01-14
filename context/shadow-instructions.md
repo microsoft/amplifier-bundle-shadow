@@ -44,6 +44,59 @@ Your local working directory is snapshotted **exactly as-is** with full git hist
 - Deleted files are properly removed from the snapshot
 - **No staging required** - what you see in your directory is what appears in the shadow
 
+---
+
+## CRITICAL: Gitea Architecture
+
+### Where is Gitea?
+
+**Gitea runs INSIDE the shadow container at `localhost:3000`**
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Shadow Container                                     │
+│  ┌─────────────────┐    ┌──────────────────────────┐ │
+│  │  Gitea Server   │    │  Your commands run here  │ │
+│  │  localhost:3000 │◄───│  (via shadow exec)       │ │
+│  └─────────────────┘    └──────────────────────────┘ │
+│           │                                           │
+│           ▼                                           │
+│  Git config rewrites:                                 │
+│  github.com/org/repo → localhost:3000/org/repo.git   │
+└──────────────────────────────────────────────────────┘
+```
+
+### Access Patterns
+
+| From | URL |
+|------|-----|
+| **Inside container** (via shadow exec) | `http://localhost:3000/org/repo.git` |
+| **From host** | Not directly accessible - must exec into container |
+
+### Common Mistake: Wrong Hostname
+
+❌ **WRONG:** `git+http://gitea:3000/microsoft/amplifier`  
+✅ **RIGHT:** Use standard GitHub URLs - git rewrites automatically
+
+The hostname "gitea" does NOT exist. Gitea is at `localhost:3000` inside the container.
+
+### The Rewriting Is Automatic
+
+When you run commands inside the shadow:
+```bash
+shadow exec <id> "git clone https://github.com/org/my-lib"
+```
+
+Git sees the URL rewriting config and automatically redirects to your local snapshot:
+```bash
+# Git internally rewrites to:
+git clone http://shadow:shadow@localhost:3000/org/my-lib.git
+```
+
+**You should never manually specify localhost:3000 URLs** - just use standard GitHub URLs and let the rewriting work.
+
+---
+
 ## Verifying Local Sources Are Used
 
 After creating a shadow with local sources, **verify** your local code is actually being used:
