@@ -2,10 +2,6 @@
 meta:
   name: shadow-smoke-test
   description: |
-
-tools:
-  - module: tool-shadow
-    source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
     Independent validation agent for shadow environment smoke testing.
     Runs completely separate from the shadow-operator context to provide
     unbiased verification that local changes work correctly.

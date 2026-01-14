@@ -44,10 +44,6 @@ meta:
     assistant: 'I'll use shadow-operator to run this in an isolated container where it cannot affect your host system.'
     <commentary>Shadow containers provide safe isolation for potentially destructive operations.</commentary>
     </example>
-
-tools:
-  - module: tool-shadow
-    source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
 ---
 
 # Shadow Operator Agent
