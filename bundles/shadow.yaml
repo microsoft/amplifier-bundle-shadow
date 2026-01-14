@@ -20,6 +20,9 @@ agents:
       Use this agent when you need to test local changes to Amplifier ecosystem
       packages in an isolated environment before deploying them.
     instructions: shadow:agents/shadow-operator.md
+    tools:
+      - module: tool-shadow
+        source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
 
   shadow-smoke-test:
     description: |
@@ -35,6 +38,9 @@ agents:
       
       Returns objective VERDICT: PASS/FAIL with evidence.
     instructions: shadow:agents/shadow-smoke-test.md
+    tools:
+      - module: tool-shadow
+        source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
 
 # Context files
 context:
