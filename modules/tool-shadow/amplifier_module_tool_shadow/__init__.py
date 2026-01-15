@@ -284,12 +284,13 @@ class ShadowTool:
         expected_commit = snapshot_commits[test_repo]
 
         try:
-            # Clone repo in /tmp and check commit
+            # Clone repo in /tmp, checkout expected commit, and verify
             clone_cmd = (
                 f"cd /tmp && "
                 f"rm -rf smoke-test && "
                 f"git clone https://github.com/{test_repo} smoke-test && "
                 f"cd smoke-test && "
+                f"git checkout {expected_commit} 2>/dev/null && "
                 f"git log -1 --format='%H'"
             )
 
