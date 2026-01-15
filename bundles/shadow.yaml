@@ -7,10 +7,9 @@ description: |
   Snapshots your local working directories and serves them as git dependencies
   via URL rewriting, while other repos fetch from real GitHub.
 
-# Tools provided by this bundle
-tools:
-  - module: tool-shadow
-    source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
+# No bundle-level tools - shadow tool only available to shadow agents via lazy activation
+# This demonstrates tool separation: root sessions don't need shadow tool,
+# only shadow-operator and shadow-smoke-test agents do.
 
 # Agents provided by this bundle
 agents:
