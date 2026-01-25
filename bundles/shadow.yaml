@@ -1,42 +1,33 @@
 # Shadow Environment Bundle
-# Provides shadow environment capabilities for testing Amplifier changes
+# Provides generic shadow environment capabilities for testing local git changes
 name: shadow
-version: "0.1.0"
+version: "0.2.0"
 description: |
-  Shadow environments for safely testing Amplifier ecosystem changes.
+  Shadow environments for safely testing local git changes in isolation.
   Snapshots your local working directories and serves them as git dependencies
   via URL rewriting, while other repos fetch from real GitHub.
+  
+  Works with ANY project (Python, Node, Rust, Go, etc.) - not tied to any specific ecosystem.
 
 # No bundle-level tools - shadow tool only available to shadow agents via lazy activation
 # This demonstrates tool separation: root sessions don't need shadow tool,
-# only shadow-operator and shadow-smoke-test agents do.
+# only the shadow-operator agent does.
 
 # Agents provided by this bundle
 agents:
   shadow-operator:
     description: |
       Agent specialized in managing shadow environments for testing.
-      Use this agent when you need to test local changes to Amplifier ecosystem
-      packages in an isolated environment before deploying them.
+      Use this agent when you need to test local git changes in an isolated 
+      container environment before pushing them.
+      
+      Supports ANY project type:
+      - Python packages (uv, pip)
+      - Node.js packages (npm, yarn)
+      - Rust crates (cargo)
+      - Go modules
+      - Any git-based dependency
     instructions: shadow:agents/shadow-operator.md
-    tools:
-      - module: tool-shadow
-        source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
-
-  shadow-smoke-test:
-    description: |
-      Independent validation agent for shadow environment smoke testing.
-      Runs completely separate from the shadow-operator context to provide
-      unbiased verification that local changes work correctly.
-      
-      Use AFTER shadow-operator creates an environment to validate:
-      - Local sources are actually being used (not just configured)
-      - Packages install and import correctly
-      - Touched code paths execute successfully
-      - Shadow isolation is intact
-      
-      Returns objective VERDICT: PASS/FAIL with evidence.
-    instructions: shadow:agents/shadow-smoke-test.md
     tools:
       - module: tool-shadow
         source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow

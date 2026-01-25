@@ -9,6 +9,7 @@ You have access to the `shadow` tool for creating OS-level isolated container en
 | `create` | Create shadow environment with local source snapshots |
 | `add-source` | Add local sources to an existing shadow |
 | `exec` | Run command inside sandbox |
+| `exec_batch` | Run multiple commands efficiently |
 | `diff` | Show changed files |
 | `extract` | Copy file from sandbox to host |
 | `inject` | Copy file from host to sandbox |
@@ -22,7 +23,7 @@ Shadow environments use **selective git URL rewriting**. When you create a shado
 
 ```bash
 # Generic example
-amplifier-shadow create --local ~/repos/my-library:myorg/my-library
+shadow create --local ~/repos/my-library:myorg/my-library
 ```
 
 Git is configured to rewrite only that specific repo:
@@ -53,17 +54,17 @@ Your local working directory is snapshotted **exactly as-is** with full git hist
 **Gitea runs INSIDE the shadow container at `localhost:3000`**
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  Shadow Container                                     │
-│  ┌─────────────────┐    ┌──────────────────────────┐ │
-│  │  Gitea Server   │    │  Your commands run here  │ │
-│  │  localhost:3000 │◄───│  (via shadow exec)       │ │
-│  └─────────────────┘    └──────────────────────────┘ │
-│           │                                           │
-│           ▼                                           │
-│  Git config rewrites:                                 │
-│  github.com/org/repo → localhost:3000/org/repo.git   │
-└──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Shadow Container                                        │
+│  ┌─────────────────┐    ┌──────────────────────────────┐ │
+│  │  Gitea Server   │    │  Your commands run here      │ │
+│  │  localhost:3000 │◄───│  (via shadow exec)           │ │
+│  └─────────────────┘    └──────────────────────────────┘ │
+│           │                                              │
+│           ▼                                              │
+│  Git config rewrites:                                    │
+│  github.com/org/repo → localhost:3000/org/repo.git      │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### Access Patterns
@@ -75,7 +76,7 @@ Your local working directory is snapshotted **exactly as-is** with full git hist
 
 ### Common Mistake: Wrong Hostname
 
-❌ **WRONG:** `git+http://gitea:3000/microsoft/amplifier`  
+❌ **WRONG:** `git+http://gitea:3000/org/my-lib`  
 ✅ **RIGHT:** Use standard GitHub URLs - git rewrites automatically
 
 The hostname "gitea" does NOT exist. Gitea is at `localhost:3000` inside the container.
@@ -137,7 +138,7 @@ shadow.exec(shadow_id, "env | grep API_KEY")
 
 ## Common Patterns
 
-### Test Local Library Changes
+### Test Local Library Changes (Python)
 
 ```python
 # Create shadow with your local library changes
@@ -148,6 +149,34 @@ shadow.exec(shadow_id, "uv pip install git+https://github.com/myorg/my-library")
 
 # Run tests
 shadow.exec(shadow_id, "pytest tests/")
+```
+
+### Test Local Package Changes (Node.js)
+
+```python
+# Create shadow with your local package
+shadow.create(local_sources=["~/repos/my-package:myorg/my-package"])
+
+# Clone and install
+shadow.exec(shadow_id, "cd /workspace && git clone https://github.com/myorg/my-package")
+shadow.exec(shadow_id, "cd /workspace/my-package && npm install")
+
+# Run tests
+shadow.exec(shadow_id, "cd /workspace/my-package && npm test")
+```
+
+### Test Local Crate Changes (Rust)
+
+```python
+# Create shadow with your local crate
+shadow.create(local_sources=["~/repos/my-crate:myorg/my-crate"])
+
+# Clone and build
+shadow.exec(shadow_id, "cd /workspace && git clone https://github.com/myorg/my-crate")
+shadow.exec(shadow_id, "cd /workspace/my-crate && cargo build")
+
+# Run tests
+shadow.exec(shadow_id, "cd /workspace/my-crate && cargo test")
 ```
 
 ### Test Multi-Repo Changes
@@ -174,34 +203,6 @@ for file in changes["changed_files"]:
     shadow.extract(shadow_id, file["path"], f"./extracted{file['path']}")
 ```
 
-## Amplifier Ecosystem Examples
-
-When developing Amplifier itself or its ecosystem packages:
-
-```python
-# Test amplifier-core changes
-shadow.create(local_sources=["~/repos/amplifier-core:microsoft/amplifier-core"])
-
-# Install amplifier - it uses YOUR local amplifier-core
-shadow.exec(shadow_id, "uv tool install git+https://github.com/microsoft/amplifier")
-
-# Install providers (quiet mode for automation)
-shadow.exec(shadow_id, "amplifier provider install -q")
-
-# Test it works
-shadow.exec(shadow_id, 'amplifier run "Hello, confirm you are working"')
-```
-
-Multi-repo Amplifier testing:
-
-```python
-shadow.create(local_sources=[
-    "~/repos/amplifier-core:microsoft/amplifier-core",
-    "~/repos/amplifier-foundation:microsoft/amplifier-foundation"
-])
-# amplifier fetches from real GitHub, but its dependencies use your local snapshots
-```
-
 ## Isolation Guarantees
 
 - **Filesystem**: Only `/workspace` and home directory are writable inside container
@@ -210,6 +211,21 @@ shadow.create(local_sources=[
 - **Environment**: Fresh home directory, isolated git config, API keys auto-passed
 - **Git history**: Preserved from your local repos (pinned commits work)
 - **Gitea server**: Embedded git server hosts your local repo snapshots
+
+## Cache Isolation
+
+Shadow environments isolate package manager caches to ensure URL rewriting works:
+
+| Ecosystem | Cache Location in Shadow |
+|-----------|--------------------------|
+| Python (uv) | `/tmp/uv-cache` |
+| Python (pip) | `/tmp/pip-cache` |
+| Node (npm) | `/tmp/npm-cache` |
+| Node (yarn) | `/tmp/yarn-cache` |
+| Rust (cargo) | `/tmp/cargo-home` |
+| Go | `/tmp/go-mod-cache` |
+
+This prevents package managers from using cached GitHub packages instead of your local Gitea snapshots.
 
 ## Important Notes
 
