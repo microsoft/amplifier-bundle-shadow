@@ -32,6 +32,25 @@ agents:
       - module: tool-shadow
         source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
 
+  shadow-smoke-test:
+    description: |
+      Independent validation agent for shadow environment smoke testing.
+      Runs completely separate from the shadow-operator context to provide
+      unbiased verification that local changes work correctly.
+      
+      Key capabilities:
+      - Analyzes local changes to determine what SHOULD be tested
+      - Verifies local sources are actually being used (not just configured)
+      - Exercises touched code paths based on diff analysis
+      - Proactively looks for issues the caller might have missed
+      - Works with ANY project type (Python, Node, Rust, Go, etc.)
+      
+      Returns objective VERDICT: PASS/FAIL with evidence.
+    instructions: shadow:agents/shadow-smoke-test.md
+    tools:
+      - module: tool-shadow
+        source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
+
 # Context files
 context:
   include:
