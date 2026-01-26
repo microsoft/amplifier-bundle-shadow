@@ -136,6 +136,82 @@ shadow.exec(shadow_id, "env | grep API_KEY")
 
 **Key insight**: The `create` and `status` operations return `snapshot_commits` so you can verify the exact commit captured from your local repo.
 
+---
+
+## Pre-cloned Repository Locations
+
+Local sources are automatically cloned to `/workspace/{org}/{repo}` inside the shadow container. This is the **authoritative location** for your local code:
+
+```bash
+# Your local source microsoft/my-library is available at:
+/workspace/microsoft/my-library
+
+# Use this path for editable installs (Python)
+shadow exec <id> "pip install -e /workspace/microsoft/my-library"
+
+# Or for Node.js
+shadow exec <id> "cd /workspace/microsoft/my-package && npm install"
+```
+
+**Always check this location first** - the repo is already there, no need to clone.
+
+---
+
+## IMPORTANT: UV Tool Caching Gotcha
+
+**Problem:** `uv tool install` has its own caching layer that may **bypass git insteadOf redirects**.
+
+When you run:
+```bash
+shadow exec <id> "uv tool install git+https://github.com/myorg/my-cli"
+```
+
+UV may fetch from its GitHub cache instead of your local Gitea, even though git redirects are configured correctly.
+
+### How to Detect This
+
+```bash
+# UV shows the resolved commit during install
+# If this commit differs from your snapshot_commits, UV used its cache!
+Updating https://github.com/myorg/my-lib (main)
+Updated https://github.com/myorg/my-lib (976fb87...)  # ← Check this!
+```
+
+### How to Verify Correctly
+
+**Don't trust UV's install output alone.** Verify through the actual source:
+
+```bash
+# 1. Check what Python is actually loading
+shadow exec <id> "python3 -c 'import my_lib; print(my_lib.__file__)'"
+# Should show: /workspace/myorg/my-lib/...  (your local snapshot)
+
+# 2. Verify the workspace has the correct commit
+shadow exec <id> "cd /workspace/myorg/my-lib && git rev-parse HEAD"
+# Should match your snapshot_commits value
+
+# 3. Git clone DOES respect redirects (for verification)
+shadow exec <id> "git clone https://github.com/myorg/my-lib /tmp/test-clone && cd /tmp/test-clone && git log -1 --oneline"
+# Should show your local snapshot commit
+```
+
+### Workarounds
+
+If UV caching is a problem:
+
+```bash
+# Option 1: Install from the pre-cloned workspace (recommended)
+shadow exec <id> "pip install -e /workspace/myorg/my-lib"
+
+# Option 2: Clear UV cache first
+shadow exec <id> "rm -rf /tmp/uv-cache && uv tool install git+https://github.com/myorg/my-cli"
+
+# Option 3: Use pip instead of uv for git dependencies
+shadow exec <id> "pip install git+https://github.com/myorg/my-lib"
+```
+
+---
+
 ## Common Patterns
 
 ### Test Local Library Changes (Python)
