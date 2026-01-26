@@ -1,6 +1,6 @@
 # Shadow Smoke Test Rubric
 
-This document provides detailed scoring criteria for the shadow smoke test validation rubric.
+This document provides detailed scoring criteria for validating shadow environments work correctly with local source changes.
 
 ## Scoring Philosophy
 
@@ -27,7 +27,7 @@ This category validates that local source snapshots are actually being used in t
 
 **Example evidence**:
 ```
-snapshot_commits: {"microsoft/amplifier-core": "abc123def456..."}
+snapshot_commits: {"myorg/my-library": "abc123def456..."}
 ```
 
 #### 1.2 Git URL Rewriting Configured (5 points)
@@ -42,12 +42,12 @@ snapshot_commits: {"microsoft/amplifier-core": "abc123def456..."}
 
 **Example evidence**:
 ```
-url.http://shadow:shadow@localhost:3000/microsoft/amplifier-core.git.insteadof https://github.com/microsoft/amplifier-core.git
+url.http://shadow:shadow@localhost:3000/myorg/my-library.git.insteadof https://github.com/myorg/my-library.git
 ```
 
 #### 1.3 Installed Package Uses Snapshot (10 points)
 
-**What to check**: When installing via `uv pip install git+https://github.com/<repo>`, the resolved commit matches the snapshot_commit.
+**What to check**: When installing via git URL, the resolved commit matches the snapshot_commit.
 
 | Points | Criteria |
 |--------|----------|
@@ -56,15 +56,27 @@ url.http://shadow:shadow@localhost:3000/microsoft/amplifier-core.git.insteadof h
 | 5 | At least one package resolves correctly |
 | 0 | No packages resolve to snapshot commits |
 
-**How to verify**:
+**How to verify (Python)**:
 ```bash
 # Get verbose output during install
-shadow exec <id> "uv pip install git+https://github.com/microsoft/amplifier-core -v 2>&1"
+shadow exec <id> "uv pip install git+https://github.com/myorg/my-library -v 2>&1"
 
 # Look for lines like:
-#   amplifier-core @ git+https://github.com/microsoft/amplifier-core@abc123def456
+#   my-library @ git+https://github.com/myorg/my-library@abc123def456
 
-# Compare abc123def456 to snapshot_commits["microsoft/amplifier-core"]
+# Compare abc123def456 to snapshot_commits["myorg/my-library"]
+```
+
+**How to verify (Node.js)**:
+```bash
+# Clone and check commit
+shadow exec <id> "cd /workspace && git clone https://github.com/myorg/my-package && cd my-package && git rev-parse HEAD"
+```
+
+**How to verify (Rust)**:
+```bash
+# Check Cargo.lock after build
+shadow exec <id> "cd /workspace/my-crate && cargo build && grep -A2 'my-dependency' Cargo.lock"
 ```
 
 #### 1.4 Unregistered Repos NOT Redirected (5 points)
@@ -79,7 +91,7 @@ shadow exec <id> "uv pip install git+https://github.com/microsoft/amplifier-core
 **How to verify**:
 ```bash
 # Pick a repo NOT in local_sources
-shadow exec <id> "git ls-remote https://github.com/microsoft/amplifier 2>&1 | head -1"
+shadow exec <id> "git ls-remote https://github.com/python/cpython 2>&1 | head -1"
 
 # Should show a real commit SHA, not "connection refused" to localhost
 ```
@@ -92,7 +104,7 @@ This category validates that packages install correctly and are functional.
 
 #### 2.1 Package Installs Without Errors (8 points)
 
-**What to check**: `uv pip install` exits with code 0 and shows success.
+**What to check**: Package manager exits with code 0 and shows success.
 
 | Points | Criteria |
 |--------|----------|
@@ -100,14 +112,27 @@ This category validates that packages install correctly and are functional.
 | 4 | Some packages install, others fail |
 | 0 | All packages fail to install |
 
-**Example evidence**:
+**Python example**:
+```bash
+shadow exec <id> "uv pip install git+https://github.com/myorg/my-library"
+# Look for: Successfully installed my-library-X.Y.Z
 ```
-Successfully installed amplifier-core-0.1.0
+
+**Node.js example**:
+```bash
+shadow exec <id> "cd /workspace/my-package && npm install"
+# Look for: added N packages
+```
+
+**Rust example**:
+```bash
+shadow exec <id> "cd /workspace/my-crate && cargo build"
+# Look for: Finished dev [unoptimized + debuginfo]
 ```
 
 #### 2.2 Package Imports Successfully (6 points)
 
-**What to check**: `python -c 'import <package>'` succeeds.
+**What to check**: The package can be imported/used.
 
 | Points | Criteria |
 |--------|----------|
@@ -115,15 +140,24 @@ Successfully installed amplifier-core-0.1.0
 | 3 | Some packages import successfully |
 | 0 | All imports fail |
 
-**How to verify**:
+**Python example**:
 ```bash
-shadow exec <id> "python -c 'import amplifier_core; print(amplifier_core.__version__)'"
-# Should output version like "0.1.0"
+shadow exec <id> "python -c 'import my_library; print(my_library.__version__)'"
+```
+
+**Node.js example**:
+```bash
+shadow exec <id> "node -e 'const pkg = require(\"my-package\"); console.log(pkg.version)'"
+```
+
+**Rust example**:
+```bash
+shadow exec <id> "cd /workspace/my-crate && cargo run --example basic"
 ```
 
 #### 2.3 CLI Tools Respond (6 points)
 
-**What to check**: If the package provides CLI tools, they respond to `--version` or `--help`.
+**What to check**: If the package provides CLI tools, they respond correctly.
 
 | Points | Criteria |
 |--------|----------|
@@ -132,9 +166,9 @@ shadow exec <id> "python -c 'import amplifier_core; print(amplifier_core.__versi
 | 0 | CLI tool not found or crashes |
 | N/A | No CLI tools expected (award full 6 points) |
 
-**How to verify**:
+**Example**:
 ```bash
-shadow exec <id> "amplifier --version"
+shadow exec <id> "my-cli --version"
 # Should output version info
 ```
 
@@ -154,16 +188,18 @@ This is the **most important category**. It validates that the actual changed co
 | 5 | Some touched modules import |
 | 0 | None of the touched modules import |
 
-**Strategy**: Build import statements from touched_files.
+**Strategy**: Build import/require statements from touched_files.
 
-```python
-# If touched_files includes "src/amplifier_core/session.py"
-# Then test: from amplifier_core.session import Session
+**Python example**:
+```bash
+# If touched_files includes "src/my_library/core.py"
+shadow exec <id> "python -c 'from my_library.core import main; print(main)'"
 ```
 
-**How to verify**:
+**Node.js example**:
 ```bash
-shadow exec <id> "python -c 'from amplifier_core.session import Session; print(Session)'"
+# If touched_files includes "src/utils.js"
+shadow exec <id> "node -e 'const utils = require(\"./src/utils\"); console.log(typeof utils)'"
 ```
 
 #### 3.2 Basic Functionality Works (10 points)
@@ -176,22 +212,18 @@ shadow exec <id> "python -c 'from amplifier_core.session import Session; print(S
 | 5 | Operation runs but produces warnings |
 | 0 | Operation fails or crashes |
 
-**Strategy based on touched_files**:
+**Strategy**: Design a simple test based on what was changed.
 
-| Touched File | Test Operation |
-|--------------|----------------|
-| `session.py` | Create a Session instance |
-| `coordinator.py` | Create a Coordinator instance |
-| `hooks.py` | Create and trigger a hook |
-| `loader.py` | Load a simple config |
-
-**How to verify**:
+**Example patterns**:
 ```bash
-# For session.py changes
-shadow exec <id> "python -c 'from amplifier_core import Session; s = Session(); print(s.id)'"
+# For a library change
+shadow exec <id> "python -c 'from my_library import MyClass; obj = MyClass(); print(obj)'"
 
-# For coordinator.py changes  
-shadow exec <id> "python -c 'from amplifier_core import Coordinator; c = Coordinator({}); print(type(c))'"
+# For a CLI change
+shadow exec <id> "my-cli process --input test.txt"
+
+# For a web framework change
+shadow exec <id> "curl -s http://localhost:8000/health"
 ```
 
 #### 3.3 Integration Test Passes (10 points)
@@ -204,29 +236,13 @@ shadow exec <id> "python -c 'from amplifier_core import Coordinator; c = Coordin
 | 5 | Operation completes with non-critical errors |
 | 0 | Operation fails |
 
-**How to verify**:
+**Example**:
 ```bash
-# Full Amplifier smoke test (if API keys available)
-shadow exec <id> "amplifier run 'Say hello' --max-turns 1"
+# Run existing tests if available
+shadow exec <id> "cd /workspace/my-project && pytest tests/ -x --tb=short -q"
 
-# Or if no API keys, test the loading/config path
-shadow exec <id> "python -c '
-from amplifier_core import Session, Coordinator
-from amplifier_core.interfaces import Provider
-
-class MockProvider(Provider):
-    @property
-    def name(self): return \"mock\"
-    async def complete(self, request): 
-        return type(\"R\", (), {\"text\": \"OK\", \"tool_calls\": []})()
-
-import asyncio
-async def test():
-    s = Session()
-    c = Coordinator({\"providers\": {}})
-    print(\"Integration OK\")
-asyncio.run(test())
-'"
+# Or run a simple integration scenario
+shadow exec <id> "my-cli full-workflow --test-mode"
 ```
 
 ---
@@ -252,23 +268,22 @@ shadow exec <id> "hostname"
 
 #### 4.2 Host Home Not Accessible (5 points)
 
-**What to check**: The container cannot read the host's `~/.amplifier` directory.
+**What to check**: The container cannot read the host's home directory contents.
 
 | Points | Criteria |
 |--------|----------|
-| 5 | Host config directory not accessible or empty |
-| 0 | Can read host's ~/.amplifier contents |
+| 5 | Host home directory not accessible or empty |
+| 0 | Can read host's home directory contents |
 
 **How to verify**:
 ```bash
-shadow exec <id> "ls -la ~/.amplifier/ 2>&1"
-# Should show empty, not exist, or permission denied
-# Should NOT show host's settings.yaml, projects/, etc.
+shadow exec <id> "ls -la ~/ 2>&1"
+# Should show empty or minimal contents, not host's files
 ```
 
 #### 4.3 Only Expected Env Vars Present (5 points)
 
-**What to check**: Only the expected API key environment variables are present.
+**What to check**: Only the expected environment variables are present.
 
 | Points | Criteria |
 |--------|----------|
@@ -278,7 +293,7 @@ shadow exec <id> "ls -la ~/.amplifier/ 2>&1"
 
 **How to verify**:
 ```bash
-shadow exec <id> "env | grep -E 'API_KEY|ENDPOINT|HOST' | sort"
+shadow exec <id> "env | grep -E 'API_KEY|TOKEN|SECRET' | sort"
 # Compare to env_vars_passed from shadow create/status
 ```
 
@@ -299,12 +314,8 @@ This category validates that existing functionality still works.
 
 **How to verify**:
 ```bash
-shadow exec <id> "python -c '
-from amplifier_core import Session, Coordinator
-from amplifier_core.hooks import HookManager
-from amplifier_core.models import ToolDefinition
-print(\"All imports OK\")
-'"
+# Test core imports for your package
+shadow exec <id> "python -c 'from my_library import core, utils, models; print(\"OK\")'"
 ```
 
 #### 5.2 Smoke Test Passes (5 points)
@@ -319,7 +330,7 @@ print(\"All imports OK\")
 **How to verify**:
 ```bash
 # Run existing tests if available
-shadow exec <id> "cd /workspace && python -m pytest tests/ -x --tb=short -q 2>&1 | tail -5"
+shadow exec <id> "cd /workspace/my-project && pytest tests/ -x --tb=short -q 2>&1 | tail -5"
 
 # Or simple sanity check
 shadow exec <id> "python -c 'print(1 + 1)'"
@@ -410,8 +421,8 @@ VERDICT: {PASS|FAIL}
 |---------|--------------|---------------|
 | Snapshot commit mismatch | Local repo not up to date | Run `git fetch --all` in local repo |
 | No insteadOf rules | Shadow create failed silently | Check shadow status for errors |
-| Package install fails | Dependency resolution issue | Check error message, may need different Python version |
+| Package install fails | Dependency resolution issue | Check error message, may need different runtime version |
 | Import fails | Missing dependency | Check if all deps were installed |
-| CLI not found | Package not installed as tool | May need `uv tool install` instead of `uv pip install` |
-| Can read host ~/.amplifier | Mount configuration wrong | Check container mounts |
+| CLI not found | Package not installed as tool | May need different install method |
+| Can read host home | Mount configuration wrong | Check container mounts |
 | Wrong env vars | Env passthrough misconfigured | Check DEFAULT_ENV_PATTERNS |

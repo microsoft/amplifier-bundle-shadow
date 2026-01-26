@@ -166,21 +166,6 @@ if test_result["exit_code"] != 0:
     STOP()
 ```
 
-**For Amplifier testing:**
-```python
-# Install Amplifier with local dependencies
-shadow(operation="exec", shadow_id=shadow_id, 
-       command="uv tool install git+https://github.com/microsoft/amplifier")
-
-# Install providers
-shadow(operation="exec", shadow_id=shadow_id,
-       command="amplifier provider install -q")
-
-# Test basic functionality
-shadow(operation="exec", shadow_id=shadow_id,
-       command="amplifier run 'Hello, confirm you are working' --max-turns 1")
-```
-
 ### Step 3: Report Results
 
 Always provide structured output:
@@ -294,36 +279,6 @@ shadow(
 ```
 
 **Why:** Git URL rewriting is configured at creation. Adding sources later requires destroy/recreate.
-
-### Testing Amplifier Changes
-
-Standard pattern for Amplifier ecosystem:
-
-```python
-# Create with Amplifier repos
-shadow(
-    operation="create",
-    local_sources=[
-        "~/repos/amplifier-core:microsoft/amplifier-core",
-        "~/repos/amplifier-foundation:microsoft/amplifier-foundation"
-    ],
-    name="amp-test"
-)
-
-# Run smoke test (see Step 1)
-
-# Install (dependencies automatically use local snapshots)
-shadow(operation="exec", shadow_id=shadow_id,
-       command="uv tool install git+https://github.com/microsoft/amplifier")
-
-# Verify local commits in output:
-# ✓ amplifier-core @ git+...@<snapshot-commit>
-# ✓ amplifier-foundation @ git+...@<snapshot-commit>
-
-# Test functionality
-shadow(operation="exec", shadow_id=shadow_id,
-       command="amplifier run 'test prompt' --max-turns 1")
-```
 
 ---
 
