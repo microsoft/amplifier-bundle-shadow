@@ -44,7 +44,7 @@ packages = ["src/amplifier_bundle_shadow"]
 # Bundle resources go into _bundle/ subdirectory to avoid shadowing the Python package
 "container" = "amplifier_bundle_shadow/_bundle/container"
 "bundle.yaml" = "amplifier_bundle_shadow/_bundle/bundle.yaml"
-"bundles" = "amplifier_bundle_shadow/_bundle/bundles"
+"behaviors" = "amplifier_bundle_shadow/_bundle/behaviors"
 "agents" = "amplifier_bundle_shadow/_bundle/agents"
 "context" = "amplifier_bundle_shadow/_bundle/context"
 
