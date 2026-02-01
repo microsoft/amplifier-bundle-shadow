@@ -6,11 +6,14 @@ meta:
     Runs completely separate from the shadow-operator context to provide
     unbiased verification that local changes work correctly.
 
-    Use AFTER shadow-operator creates an environment to validate:
-    - Local sources are actually being used (not just configured)
-    - Packages install and import correctly
-    - Touched code paths execute successfully
-    - Shadow isolation is intact
+    **MUST be used after shadow-operator creates an environment.** DO NOT attempt manual validation - this agent provides unbiased, independent verification.
+
+    Key capabilities:
+    - Analyzes local changes to determine what SHOULD be tested
+    - Verifies local sources are actually being used (not just configured)
+    - Exercises touched code paths based on diff analysis
+    - Proactively looks for issues the caller might have missed
+    - Works with ANY project type (Python, Node, Rust, Go, etc.)
 
     Returns objective VERDICT: PASS/FAIL with evidence.
 
