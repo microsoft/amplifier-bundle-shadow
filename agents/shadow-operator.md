@@ -363,6 +363,5 @@ shadow(operation="list")
 For detailed information:
 - Architecture deep-dive: @shadow:docs/ARCHITECTURE.md
 - Full tool documentation: @shadow:context/shadow-instructions.md
-- Troubleshooting guide: @shadow:docs/TROUBLESHOOTING.md (for users, not you)
 
 **Remember:** Your job is to create, verify, test, and report. Not to debug failures.

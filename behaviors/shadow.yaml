@@ -1,0 +1,36 @@
+# Shadow Environment Behavior
+# Provides shadow environment capabilities for testing local git changes
+
+bundle:
+  name: shadow
+  version: "0.2.0"
+  description: |
+    Shadow environments for safely testing local git changes in isolation.
+    Snapshots your local working directories and serves them as git dependencies
+    via URL rewriting, while other repos fetch from real GitHub.
+    
+    Works with ANY project (Python, Node, Rust, Go, etc.) - not tied to any specific ecosystem.
+
+# No bundle-level tools - shadow tool only available to shadow agents via lazy activation
+# This demonstrates tool separation: root sessions don't need shadow tool,
+# only the shadow-operator agent does.
+
+# Agents provided by this bundle
+# Descriptions come from agent frontmatter (single source of truth)
+agents:
+  shadow-operator:
+    include: shadow:agents/shadow-operator
+    tools:
+      - module: tool-shadow
+        source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
+
+  shadow-smoke-test:
+    include: shadow:agents/shadow-smoke-test
+    tools:
+      - module: tool-shadow
+        source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
+
+# Context files
+context:
+  include:
+    - shadow:context/shadow-instructions.md

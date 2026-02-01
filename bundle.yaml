@@ -1,10 +1,10 @@
 # Shadow Environment Bundle - Root Entry Point
-# This file provides the root bundle entry point that includes the actual bundle
+# This file provides the root bundle entry point that includes the actual behavior
 
 bundle:
   name: shadow
-  version: 0.1.0
-  description: Shadow environments for safely testing Amplifier ecosystem changes
+  version: "0.2.0"
+  description: Shadow environments for safely testing local git changes in isolation
 
 includes:
-  - bundle: shadow:bundles/shadow.yaml
+  - bundle: shadow:behaviors/shadow.yaml
