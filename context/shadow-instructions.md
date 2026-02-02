@@ -47,85 +47,57 @@ Your local working directory is snapshotted **exactly as-is** with full git hist
 
 ---
 
-## Iterating on Local Changes
+## CRITICAL: Iterating During Shadow Testing
 
-Shadow environments snapshot your local repos **at creation time**. When you make new commits locally after creating a shadow, those changes are **NOT automatically available** in the existing shadow.
+**Do NOT assume new local commits are automatically available in existing shadows.** Shadows capture a point-in-time snapshot at creation. When you fix code locally and need to re-test, you MUST explicitly sync the changes.
 
-### The Common Workflow Gap
+### When Re-testing After Local Fixes
 
-```
-write code → create shadow → test → find issue → fix locally → test again → ???
-```
-
-**The missing step:** Use `add-source` to sync your new local commits into the running shadow.
-
-### Syncing New Commits
-
-**Option 1: Use `add-source` (recommended for quick iterations)**
+After making local commits to fix issues found during shadow testing, **always sync before re-testing**:
 
 ```python
-# After making new commits locally, sync them to the shadow
+# 1. Sync new local commits into the running shadow
 shadow.add_source(shadow_id, "/path/to/local/repo:org/repo-name")
 
-# Verify the new commits are captured
-shadow.status(shadow_id)  # Check snapshot_commits in output
+# 2. Verify the new commits are captured
+shadow.status(shadow_id)  # Check snapshot_commits matches your local HEAD
 
-# Clear any caches that may have the old version
+# 3. Clear caches and reinstall
 shadow.exec(shadow_id, "rm -rf /tmp/uv-cache /tmp/pip-cache")
-
-# Re-install to pick up the new changes
 shadow.exec(shadow_id, "uv pip install git+https://github.com/org/repo-name --reinstall")
 
-# Re-test
+# 4. Re-test
 shadow.exec(shadow_id, "pytest tests/")
 ```
 
-**Option 2: Destroy and recreate (clean slate)**
+### Alternative: Destroy and Recreate
+
+For major changes or when debugging cache issues, destroy and recreate for a clean slate:
 
 ```python
-# Destroy the old shadow
 shadow.destroy(shadow_id)
-
-# Create fresh with current local state
 shadow.create(local_sources=["/path/to/local/repo:org/repo-name"])
 ```
 
-**Option 3: Editable install (fastest for Python packages)**
+### Fastest Path for Python: Editable Install
 
-If your local source is already cloned to `/workspace/`, use an editable install to skip git operations entirely:
+If iterating rapidly on Python packages, use editable installs from `/workspace/`:
 
 ```python
-# Install directly from the pre-cloned workspace (no git fetch needed)
 shadow.exec(shadow_id, "pip install -e /workspace/org/repo-name")
-
-# Re-test immediately
-shadow.exec(shadow_id, "pytest tests/")
+shadow.exec(shadow_id, "pytest tests/")  # Changes reflected immediately
 ```
 
-This is the fastest option when iterating on Python packages, as changes to `/workspace/` are reflected immediately without reinstalling.
+### Quick Reference
 
-### When to Use Which Option
+| Situation | Action |
+|-----------|--------|
+| Fixed code locally, need to re-test | `add-source` → clear cache → reinstall → test |
+| Multiple iteration rounds | `add-source` each time before testing |
+| Cache confusion or major changes | Destroy and recreate shadow |
+| Rapid Python iteration | Editable install from `/workspace/` |
 
-| Scenario | Recommended Approach |
-|----------|---------------------|
-| Quick fix iteration (same test) | `add-source` - faster, preserves installed dependencies |
-| Rapid Python iteration | Editable install - instant, no reinstall needed |
-| Major changes or cache confusion | Destroy + recreate - clean slate |
-| Multiple rounds of fixes | `add-source` each time |
-| Debugging cache/state issues | Destroy + recreate - eliminates variables |
-
-### Common Mistake
-
-**Assuming new local commits are automatically available in existing shadows.**
-
-They are NOT. Shadows are isolated point-in-time snapshots. If you:
-1. Create a shadow
-2. Make local commits
-3. Test in the shadow without using `add-source`
-
-...you're testing **old code**. Always verify with `shadow.status(shadow_id)` to see which commits are in the shadow.
-
-> **Tip**: See "Verifying Local Sources Are Used" below for detailed verification patterns.
+**Always verify** with `shadow.status(shadow_id)` that your commits are in the shadow before testing. See "Verifying Local Sources Are Used" below for detailed verification patterns.
 
 ---
 
