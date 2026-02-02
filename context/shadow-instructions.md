@@ -67,6 +67,9 @@ write code → create shadow → test → find issue → fix locally → test ag
 # After making new commits locally, sync them to the shadow
 shadow.add_source(shadow_id, "/path/to/local/repo:org/repo-name")
 
+# Verify the new commits are captured
+shadow.status(shadow_id)  # Check snapshot_commits in output
+
 # Clear any caches that may have the old version
 shadow.exec(shadow_id, "rm -rf /tmp/uv-cache /tmp/pip-cache")
 
@@ -87,11 +90,26 @@ shadow.destroy(shadow_id)
 shadow.create(local_sources=["/path/to/local/repo:org/repo-name"])
 ```
 
+**Option 3: Editable install (fastest for Python packages)**
+
+If your local source is already cloned to `/workspace/`, use an editable install to skip git operations entirely:
+
+```python
+# Install directly from the pre-cloned workspace (no git fetch needed)
+shadow.exec(shadow_id, "pip install -e /workspace/org/repo-name")
+
+# Re-test immediately
+shadow.exec(shadow_id, "pytest tests/")
+```
+
+This is the fastest option when iterating on Python packages, as changes to `/workspace/` are reflected immediately without reinstalling.
+
 ### When to Use Which Option
 
 | Scenario | Recommended Approach |
 |----------|---------------------|
 | Quick fix iteration (same test) | `add-source` - faster, preserves installed dependencies |
+| Rapid Python iteration | Editable install - instant, no reinstall needed |
 | Major changes or cache confusion | Destroy + recreate - clean slate |
 | Multiple rounds of fixes | `add-source` each time |
 | Debugging cache/state issues | Destroy + recreate - eliminates variables |
@@ -106,6 +124,8 @@ They are NOT. Shadows are isolated point-in-time snapshots. If you:
 3. Test in the shadow without using `add-source`
 
 ...you're testing **old code**. Always verify with `shadow.status(shadow_id)` to see which commits are in the shadow.
+
+> **Tip**: See "Verifying Local Sources Are Used" below for detailed verification patterns.
 
 ---
 
