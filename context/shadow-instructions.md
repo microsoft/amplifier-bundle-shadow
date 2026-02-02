@@ -47,6 +47,68 @@ Your local working directory is snapshotted **exactly as-is** with full git hist
 
 ---
 
+## Iterating on Local Changes
+
+Shadow environments snapshot your local repos **at creation time**. When you make new commits locally after creating a shadow, those changes are **NOT automatically available** in the existing shadow.
+
+### The Common Workflow Gap
+
+```
+write code → create shadow → test → find issue → fix locally → test again → ???
+```
+
+**The missing step:** Use `add-source` to sync your new local commits into the running shadow.
+
+### Syncing New Commits
+
+**Option 1: Use `add-source` (recommended for quick iterations)**
+
+```python
+# After making new commits locally, sync them to the shadow
+shadow.add_source(shadow_id, "/path/to/local/repo:org/repo-name")
+
+# Clear any caches that may have the old version
+shadow.exec(shadow_id, "rm -rf /tmp/uv-cache /tmp/pip-cache")
+
+# Re-install to pick up the new changes
+shadow.exec(shadow_id, "uv pip install git+https://github.com/org/repo-name --reinstall")
+
+# Re-test
+shadow.exec(shadow_id, "pytest tests/")
+```
+
+**Option 2: Destroy and recreate (clean slate)**
+
+```python
+# Destroy the old shadow
+shadow.destroy(shadow_id)
+
+# Create fresh with current local state
+shadow.create(local_sources=["/path/to/local/repo:org/repo-name"])
+```
+
+### When to Use Which Option
+
+| Scenario | Recommended Approach |
+|----------|---------------------|
+| Quick fix iteration (same test) | `add-source` - faster, preserves installed dependencies |
+| Major changes or cache confusion | Destroy + recreate - clean slate |
+| Multiple rounds of fixes | `add-source` each time |
+| Debugging cache/state issues | Destroy + recreate - eliminates variables |
+
+### Common Mistake
+
+**Assuming new local commits are automatically available in existing shadows.**
+
+They are NOT. Shadows are isolated point-in-time snapshots. If you:
+1. Create a shadow
+2. Make local commits
+3. Test in the shadow without using `add-source`
+
+...you're testing **old code**. Always verify with `shadow.status(shadow_id)` to see which commits are in the shadow.
+
+---
+
 ## CRITICAL: Gitea Architecture
 
 ### Where is Gitea?
