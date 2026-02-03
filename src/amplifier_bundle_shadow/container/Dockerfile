@@ -40,6 +40,49 @@ ENV GITEA_WORK_DIR=/var/lib/gitea
 ENV USER=amplifier
 # Include uv tool bin directory in PATH so installed tools are immediately usable
 ENV PATH="/home/amplifier/.local/bin:${PATH}"
+# Force uv to use git (respects our URL rewriting instead of GitHub API fast path)
+ENV UV_NO_GITHUB_FAST_PATH=1
+
+# SHADOW-011/012: Explicit Python path for Amplifier tools
+# After `uv tool install amplifier`, Python with amplifier_core is at:
+ENV AMPLIFIER_PYTHON=/home/amplifier/.local/share/uv/tools/amplifier/bin/python
+# Note: System Python (/usr/local/bin/python3) does NOT have amplifier_core installed
+
+# SHADOW-013: Create self-documentation file for container introspection
+# This allows agents to quickly discover container configuration without guessing
+RUN echo '{\
+  "environment": "shadow",\
+  "description": "Amplifier shadow environment for isolated testing",\
+  "paths": {\
+    "workspace": "/workspace",\
+    "snapshots": "/snapshots",\
+    "home": "/home/amplifier",\
+    "gitea_data": "/var/lib/gitea",\
+    "gitea_config": "/etc/gitea/app.ini"\
+  },\
+  "python": {\
+    "system": "/usr/local/bin/python3",\
+    "amplifier": "/home/amplifier/.local/share/uv/tools/amplifier/bin/python",\
+    "note": "System Python does NOT have amplifier_core. Use AMPLIFIER_PYTHON or the amplifier path."\
+  },\
+  "services": {\
+    "gitea": {\
+      "url": "http://localhost:3000",\
+      "api": "http://localhost:3000/api/v1",\
+      "user": "shadow",\
+      "password": "shadow"\
+    }\
+  },\
+  "env_vars": {\
+    "AMPLIFIER_PYTHON": "Path to Python with amplifier_core installed",\
+    "UV_NO_GITHUB_FAST_PATH": "Forces uv to use git for URL rewriting"\
+  },\
+  "notes": [\
+    "The shadow CLI tool is HOST-SIDE ONLY - it does not exist inside this container",\
+    "Use amplifier CLI inside the container for testing",\
+    "Local source repos are available via Gitea at http://localhost:3000"\
+  ]\
+}' > /etc/shadow-environment.json
 
 # Run as amplifier user
 USER amplifier
