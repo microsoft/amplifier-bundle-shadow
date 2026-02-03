@@ -76,6 +76,7 @@ class ShadowTool:
                         "list",
                         "status",
                         "preflight",
+                        "build-image",
                         "destroy",
                     ],
                     "description": "The operation to perform",
@@ -163,6 +164,7 @@ class ShadowTool:
             "list": self._list,
             "status": self._status,
             "preflight": self._preflight,
+            "build-image": self._build_image,
             "destroy": self._destroy,
         }
 
@@ -895,13 +897,15 @@ class ShadowTool:
                 "passed": image_exists,
                 "message": f"Image {DEFAULT_IMAGE} found"
                 if image_exists
-                else f"Image {DEFAULT_IMAGE} not found",
+                else f"Image {DEFAULT_IMAGE} not found (will auto-build on create)",
             }
         )
+        # Note: We don't fail all_passed for missing image because create will auto-build
+        # But we still provide setup instructions for users who want to pre-build
         if not image_exists:
-            all_passed = False
             setup_instructions.append(
-                f"Build image: 'amplifier-shadow build-image' or pull: '{runtime} pull {DEFAULT_IMAGE}'"
+                "Optional: Pre-build image with 'build-image' operation or 'amplifier-shadow build'. "
+                "Note: 'create' will auto-build if image is missing."
             )
 
         # Check 4: API keys available in host environment
@@ -940,9 +944,9 @@ class ShadowTool:
             if not image_exists and daemon_running:
                 fallback = {
                     "reason": "image_not_available",
-                    "mode": "build_first",
-                    "can_create_shadow": False,
-                    "recommended_action": "Build shadow image with 'amplifier-shadow build-image'",
+                    "mode": "auto_build",
+                    "can_create_shadow": True,  # create will auto-build the image
+                    "recommended_action": "Proceed with create (will auto-build) or pre-build with 'build-image' operation",
                 }
             elif not has_api_key:
                 fallback = {
@@ -1148,6 +1152,92 @@ class ShadowTool:
             },
             error=None,
         )
+
+    async def _build_image(self, input: dict[str, Any]) -> ToolResult:
+        """Build the shadow container image.
+
+        This operation builds the amplifier-shadow container image locally.
+        The image is required for shadow environments but will be auto-built
+        on first `create` if missing. Use this operation to:
+        - Pre-build the image before creating shadows
+        - Rebuild after updating the shadow bundle
+        - Verify the build process works
+        """
+        import shutil
+
+        force = input.get("force", False)
+        tag = input.get("image", DEFAULT_IMAGE)
+
+        # Check for container runtime
+        runtime = None
+        if shutil.which("podman"):
+            runtime = "podman"
+        elif shutil.which("docker"):
+            runtime = "docker"
+
+        if not runtime:
+            return ToolResult(
+                success=False,
+                output=None,
+                error={
+                    "message": "No container runtime found. Install Docker or Podman first.",
+                    "code": "no_container_runtime",
+                },
+            )
+
+        try:
+            from amplifier_bundle_shadow.builder import ImageBuilder
+
+            builder = ImageBuilder()
+
+            # Check if image already exists
+            image_exists = await builder.image_exists(tag)
+            if image_exists and not force:
+                return ToolResult(
+                    output={
+                        "image": tag,
+                        "built": False,
+                        "message": f"Image {tag} already exists. Use force=true to rebuild.",
+                    },
+                    error=None,
+                )
+
+            # Build the image
+            progress_lines: list[str] = []
+
+            def progress_callback(line: str) -> None:
+                progress_lines.append(line)
+
+            await builder.build(tag, progress_callback=progress_callback)
+
+            return ToolResult(
+                output={
+                    "image": tag,
+                    "built": True,
+                    "message": f"Successfully built image {tag}",
+                    "build_output_lines": len(progress_lines),
+                },
+                error=None,
+            )
+
+        except FileNotFoundError as e:
+            return ToolResult(
+                success=False,
+                output=None,
+                error={
+                    "message": f"Could not find container build files: {e}",
+                    "code": "build_files_not_found",
+                },
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                output=None,
+                error={
+                    "message": f"Failed to build image: {e}",
+                    "code": "build_failed",
+                },
+            )
 
     async def _destroy(self, input: dict[str, Any]) -> ToolResult:
         """Destroy a shadow environment."""
