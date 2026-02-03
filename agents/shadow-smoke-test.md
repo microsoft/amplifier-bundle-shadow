@@ -347,7 +347,75 @@ shadow exec <id> "cd /workspace/<repo> && go test ./..."
 
 ---
 
+## Fallback Mode: Host-Only Testing
+
+When shadow environments are unavailable, you MUST switch to host-only mode.
+
+### Detecting Fallback Mode
+
+Check the handoff manifest from shadow-operator:
+
+```yaml
+# If you receive this in your instructions:
+fallback_mode: true
+failure_reason: "docker_not_running"  # or other error code
+```
+
+### Host-Only Rubric (50 points)
+
+When `fallback_mode: true`, use the HOST-ONLY rubric instead of the full 100-point rubric:
+
+| Category | Points | What to Check |
+|----------|--------|---------------|
+| Local Source Verification | 15 | Path exists, git valid, commit readable |
+| Code Quality | 15 | Syntax valid, imports resolve, tests exist |
+| Dependency Analysis | 10 | Dependency file exists and parseable |
+| Basic Execution | 10 | Package imports (if safe), version accessible |
+| **Total** | **50** | Pass threshold: 35 |
+
+**CRITICAL**: Do NOT attempt shadow operations in fallback mode:
+- No `shadow exec` calls
+- No snapshot commit verification
+- No isolation integrity checks
+
+### Host-Only Output Format
+
+```
++================================================================+
+|  HOST-ONLY SMOKE TEST RESULTS                                   |
+|  Mode: HOST-ONLY (shadow unavailable)                           |
+|  Fallback Reason: {failure_reason}                              |
++================================================================+
+
+## Why Host-Only Mode?
+Shadow unavailable: {failure_reason}
+
+[Host-only rubric checks...]
+
+Total Score: XX/50
+Pass Threshold: 35
+Mode: HOST-ONLY
+
+VERDICT: PASS
+===================================================================
+```
+
+### Why Different Scoring?
+
+The full 100-point rubric tests **isolation guarantees** that require a shadow environment:
+- Snapshot commits being used (requires Gitea)
+- Git URL rewriting working (requires container)
+- Installed package uses correct source (requires isolated install)
+
+The 50-point host-only rubric tests **code validity** - a necessary but not sufficient condition for the full rubric to pass.
+
+**A 50/50 host-only score does NOT mean production ready** - it means ready to be tested in isolation when shadow becomes available.
+
+---
+
 ## Reference
 
 For detailed rubric criteria: @shadow:context/smoke-test-rubric.md
+For host-only rubric: @shadow:context/host-only-rubric.md
+For agent handoff protocol: @shadow:context/agent-handoff-protocol.md
 For shadow architecture: @shadow:context/shadow-instructions.md
