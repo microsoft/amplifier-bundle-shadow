@@ -90,6 +90,10 @@ class ShadowTool:
                     "type": "boolean",
                     "description": "Automatically run smoke test after creation (create operation, default: true)",
                 },
+                "preflight": {
+                    "type": "boolean",
+                    "description": "Run preflight checks before create (create operation, default: true). Set to false to skip.",
+                },
                 "required_env_vars": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -193,7 +197,44 @@ class ShadowTool:
         name = input.get("name")
         image = input.get("image", DEFAULT_IMAGE)
         verify = input.get("verify", True)
+        run_preflight = input.get(
+            "preflight", True
+        )  # SHADOW-008: Auto-run preflight by default
         required_env_vars = input.get("required_env_vars", [])
+
+        # SHADOW-008: Auto-run preflight checks before create (unless explicitly disabled)
+        if run_preflight:
+            preflight_result = await self._preflight_pre_create(input)
+            preflight_output = preflight_result.output
+
+            # Check if preflight passed (excluding non-blocking checks like missing image)
+            # We allow create to proceed if can_create_shadow is True
+            fallback = preflight_output.get("fallback") if preflight_output else None
+            can_create = True
+            if fallback and not fallback.get("can_create_shadow", True):
+                can_create = False
+
+            if not can_create:
+                # Return preflight failure with guidance
+                return ToolResult(
+                    success=False,
+                    output={
+                        "phase": "preflight",
+                        "preflight_passed": False,
+                        "preflight_checks": preflight_output.get("checks", []),
+                        "setup_instructions": preflight_output.get(
+                            "setup_instructions"
+                        ),
+                        "fallback": fallback,
+                        "message": "Preflight checks failed - cannot create shadow environment",
+                    },
+                    error={
+                        "message": "Prerequisites not met for shadow environment",
+                        "code": fallback.get("reason", "preflight_failed")
+                        if fallback
+                        else "preflight_failed",
+                    },
+                )
 
         # Validate required environment variables
         if required_env_vars:
