@@ -82,7 +82,7 @@ class ShadowTool:
                 "local_sources": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Local source mappings for create: '/path/to/repo:org/name'. These repos will be snapshotted (including uncommitted changes) and served via local Gitea instead of fetching from GitHub.",
+                    "description": "Optional local source mappings for create: '/path/to/repo:org/name'. These repos will be snapshotted and served via local Gitea. If omitted, creates an isolated environment that uses real GitHub (no URL rewriting).",
                 },
                 "verify": {
                     "type": "boolean",
@@ -179,21 +179,17 @@ class ShadowTool:
             return ToolResult(success=False, output=None, error={"message": str(e)})
 
     async def _create(self, input: dict[str, Any]) -> ToolResult:
-        """Create a new shadow environment with local source overrides."""
-        local_sources = input.get("local_sources")
+        """Create a new shadow environment.
+
+        Can be used in two modes:
+        1. With local_sources: Creates environment with local repo overrides (Gitea serves local snapshots)
+        2. Without local_sources: Creates isolated environment that uses real GitHub (no URL rewriting)
+        """
+        local_sources = input.get("local_sources") or []  # Empty list if not provided
         name = input.get("name")
         image = input.get("image", DEFAULT_IMAGE)
         verify = input.get("verify", True)
         required_env_vars = input.get("required_env_vars", [])
-
-        if not local_sources:
-            return ToolResult(
-                success=False,
-                output=None,
-                error={
-                    "message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]"
-                },
-            )
 
         # Validate required environment variables
         if required_env_vars:

@@ -480,6 +480,10 @@ class ShadowManager:
         local_repos: list[RepoSpec],
     ) -> None:
         """Verify git URL rewriting is configured correctly."""
+        # No verification needed when there are no local repos to redirect
+        if not local_repos:
+            return
+
         # Check that git config has our insteadOf rules
         code, stdout, stderr = await self.runtime.exec(
             container, 'git config --global --get-regexp "url.*insteadOf"'
