@@ -761,6 +761,13 @@ class ShadowTool:
                     "checks": checks,
                     "setup_instructions": setup_instructions,
                     "message": "Container runtime not installed - cannot proceed",
+                    # SHADOW-006: Structured fallback guidance for downstream agents
+                    "fallback": {
+                        "reason": "container_runtime_not_installed",
+                        "mode": "host_only",
+                        "can_create_shadow": False,
+                        "recommended_action": "Run tests on host without shadow isolation",
+                    },
                 },
                 error=None,
             )
@@ -807,6 +814,13 @@ class ShadowTool:
                     "setup_instructions": setup_instructions,
                     "runtime": runtime,
                     "message": f"{runtime} daemon not running - cannot proceed",
+                    # SHADOW-006: Structured fallback guidance for downstream agents
+                    "fallback": {
+                        "reason": "container_daemon_not_running",
+                        "mode": "host_only",
+                        "can_create_shadow": False,
+                        "recommended_action": "Start container daemon or run tests on host",
+                    },
                 },
                 error=None,
             )
@@ -867,6 +881,25 @@ class ShadowTool:
                 "Set at least one API key: export ANTHROPIC_API_KEY=... (or OPENAI_API_KEY, etc.)"
             )
 
+        # Determine fallback guidance based on what failed
+        fallback = None
+        if not all_passed:
+            # Identify the most severe failure for fallback recommendation
+            if not image_exists and daemon_running:
+                fallback = {
+                    "reason": "image_not_available",
+                    "mode": "build_first",
+                    "can_create_shadow": False,
+                    "recommended_action": "Build shadow image with 'amplifier-shadow build-image'",
+                }
+            elif not has_api_key:
+                fallback = {
+                    "reason": "no_api_keys",
+                    "mode": "host_only",
+                    "can_create_shadow": True,  # Can create, but limited use
+                    "recommended_action": "Set API keys or run without LLM features",
+                }
+
         return ToolResult(
             success=all_passed,
             output={
@@ -880,6 +913,8 @@ class ShadowTool:
                 "message": "All pre-create checks passed - ready to create shadow environment"
                 if all_passed
                 else "Some checks failed - review setup_instructions",
+                # SHADOW-006: Structured fallback guidance for downstream agents
+                "fallback": fallback,
             },
             error=None,
         )
