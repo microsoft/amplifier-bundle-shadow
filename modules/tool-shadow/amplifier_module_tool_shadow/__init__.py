@@ -177,7 +177,8 @@ class ShadowTool:
                 success=False,
                 output=None,
                 error={
-                    "message": f"Unknown operation: {operation}. Available: {', '.join(operations.keys())}"
+                    "message": f"Unknown operation: {operation}. Available: {', '.join(operations.keys())}",
+                    "code": "unknown_operation",
                 },
             )
 
@@ -251,6 +252,7 @@ class ShadowTool:
                         "message": "Missing required environment variables",
                         "missing_vars": missing_vars,
                         "instructions": "Set these variables in your shell before creating shadow",
+                        "code": "missing_env_vars",
                     },
                 )
 
@@ -391,7 +393,8 @@ class ShadowTool:
                 success=False,
                 output=None,
                 error={
-                    "message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]"
+                    "message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]",
+                    "code": "missing_parameter",
                 },
             )
 
@@ -436,7 +439,8 @@ class ShadowTool:
                 success=False,
                 output=None,
                 error={
-                    "message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]"
+                    "message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]",
+                    "code": "missing_parameter",
                 },
             )
 
@@ -501,7 +505,8 @@ class ShadowTool:
                 success=False,
                 output=None,
                 error={
-                    "message": f"Container not running for shadow environment: {shadow_id}. Try recreating it."
+                    "message": f"Container not running for shadow environment: {shadow_id}. Try recreating it.",
+                    "code": "container_not_running",
                 },
             )
 
@@ -516,7 +521,10 @@ class ShadowTool:
             },
             error=None
             if result.exit_code == 0
-            else {"message": f"Command failed with exit code {result.exit_code}"},
+            else {
+                "message": f"Command failed with exit code {result.exit_code}",
+                "code": "command_failed",
+            },
         )
 
     async def _exec_batch(self, input: dict[str, Any]) -> ToolResult:
@@ -568,7 +576,8 @@ class ShadowTool:
                 success=False,
                 output=None,
                 error={
-                    "message": f"Container not running for shadow environment: {shadow_id}. Try recreating it."
+                    "message": f"Container not running for shadow environment: {shadow_id}. Try recreating it.",
+                    "code": "container_not_running",
                 },
             )
 
@@ -605,7 +614,8 @@ class ShadowTool:
             else {
                 "message": f"Batch execution failed at step {failed_at}"
                 if failed_at is not None
-                else "Some commands failed"
+                else "Some commands failed",
+                "code": "batch_failed",
             },
         )
 
@@ -1358,7 +1368,11 @@ class ShadowTool:
                 error=None,
             )
         except ValueError as e:
-            return ToolResult(success=False, output=None, error={"message": str(e)})
+            return ToolResult(
+                success=False,
+                output=None,
+                error={"message": str(e), "code": "build_failed"},
+            )
 
 
 async def mount(coordinator, config: dict[str, Any] | None = None):
