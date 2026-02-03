@@ -184,7 +184,11 @@ class ShadowTool:
         try:
             return await operations[operation](input)
         except Exception as e:
-            return ToolResult(success=False, output=None, error={"message": str(e)})
+            return ToolResult(
+                success=False,
+                output=None,
+                error={"message": str(e), "code": "operation_failed"},
+            )
 
     async def _create(self, input: dict[str, Any]) -> ToolResult:
         """Create a new shadow environment.
@@ -378,7 +382,9 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
         if not local_sources:
             return ToolResult(
@@ -421,7 +427,9 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
         if not local_sources:
             return ToolResult(
@@ -465,11 +473,15 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
         if not command:
             return ToolResult(
-                success=False, output=None, error={"message": "command is required"}
+                success=False,
+                output=None,
+                error={"message": "command is required", "code": "missing_parameter"},
             )
 
         env = self.manager.get(shadow_id)
@@ -477,7 +489,10 @@ class ShadowTool:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": f"Shadow environment not found: {shadow_id}"},
+                error={
+                    "message": f"Shadow environment not found: {shadow_id}",
+                    "code": "shadow_not_found",
+                },
             )
 
         # Check if container is running
@@ -513,19 +528,27 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
         if not commands:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": "commands parameter is required (array of strings)"},
+                error={
+                    "message": "commands parameter is required (array of strings)",
+                    "code": "missing_parameter",
+                },
             )
         if not isinstance(commands, list):
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": "commands must be an array of strings"},
+                error={
+                    "message": "commands must be an array of strings",
+                    "code": "validation_error",
+                },
             )
 
         env = self.manager.get(shadow_id)
@@ -533,7 +556,10 @@ class ShadowTool:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": f"Shadow environment not found: {shadow_id}"},
+                error={
+                    "message": f"Shadow environment not found: {shadow_id}",
+                    "code": "shadow_not_found",
+                },
             )
 
         # Check if container is running
@@ -590,7 +616,9 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
 
         env = self.manager.get(shadow_id)
@@ -598,7 +626,10 @@ class ShadowTool:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": f"Shadow environment not found: {shadow_id}"},
+                error={
+                    "message": f"Shadow environment not found: {shadow_id}",
+                    "code": "shadow_not_found",
+                },
             )
 
         changed = env.diff(path)
@@ -627,17 +658,24 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
         if not container_path:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": "container_path is required"},
+                error={
+                    "message": "container_path is required",
+                    "code": "missing_parameter",
+                },
             )
         if not host_path:
             return ToolResult(
-                success=False, output=None, error={"message": "host_path is required"}
+                success=False,
+                output=None,
+                error={"message": "host_path is required", "code": "missing_parameter"},
             )
 
         env = self.manager.get(shadow_id)
@@ -645,7 +683,10 @@ class ShadowTool:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": f"Shadow environment not found: {shadow_id}"},
+                error={
+                    "message": f"Shadow environment not found: {shadow_id}",
+                    "code": "shadow_not_found",
+                },
             )
 
         bytes_copied = env.extract(container_path, host_path)
@@ -668,17 +709,24 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
         if not host_path:
             return ToolResult(
-                success=False, output=None, error={"message": "host_path is required"}
+                success=False,
+                output=None,
+                error={"message": "host_path is required", "code": "missing_parameter"},
             )
         if not container_path:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": "container_path is required"},
+                error={
+                    "message": "container_path is required",
+                    "code": "missing_parameter",
+                },
             )
 
         env = self.manager.get(shadow_id)
@@ -686,7 +734,10 @@ class ShadowTool:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": f"Shadow environment not found: {shadow_id}"},
+                error={
+                    "message": f"Shadow environment not found: {shadow_id}",
+                    "code": "shadow_not_found",
+                },
             )
 
         env.inject(host_path, container_path)
@@ -714,7 +765,9 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
 
         env = self.manager.get(shadow_id)
@@ -722,7 +775,10 @@ class ShadowTool:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": f"Shadow environment not found: {shadow_id}"},
+                error={
+                    "message": f"Shadow environment not found: {shadow_id}",
+                    "code": "shadow_not_found",
+                },
             )
 
         info = env.to_info()
@@ -1047,7 +1103,10 @@ class ShadowTool:
             return ToolResult(
                 success=False,
                 output=None,
-                error={"message": f"Shadow environment not found: {shadow_id}"},
+                error={
+                    "message": f"Shadow environment not found: {shadow_id}",
+                    "code": "shadow_not_found",
+                },
             )
 
         checks: list[dict[str, Any]] = []
@@ -1287,7 +1346,9 @@ class ShadowTool:
 
         if not shadow_id:
             return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
+                success=False,
+                output=None,
+                error={"message": "shadow_id is required", "code": "missing_parameter"},
             )
 
         try:
