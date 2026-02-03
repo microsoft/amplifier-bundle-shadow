@@ -30,7 +30,5 @@ agents:
       - module: tool-shadow
         source: git+https://github.com/microsoft/amplifier-bundle-shadow@main#subdirectory=modules/tool-shadow
 
-# Context files
-context:
-  include:
-    - shadow:context/shadow-instructions.md
+# Context is loaded via @mentions in agent files (context sink pattern)
+# No behavior-level context - agents carry their own context
