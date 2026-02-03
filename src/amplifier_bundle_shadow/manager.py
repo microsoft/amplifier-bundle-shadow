@@ -291,8 +291,8 @@ class ShadowManager:
         if env is None:
             raise ValueError(f"Shadow environment not found: {shadow_id}")
 
-        # Parse new source specs
-        new_specs = [RepoSpec.parse(src) for src in local_sources]
+        # Parse new source specs (using parse_local for path:org/repo format)
+        new_specs = [RepoSpec.parse_local(src) for src in local_sources]
 
         # Check for duplicates
         existing_repos = {(r.org, r.name) for r in env.repos}
@@ -337,6 +337,123 @@ class ShadowManager:
         )
 
         # Update environment with new repos
+        env.repos.extend(new_specs)
+
+        # Update metadata on disk
+        self._write_metadata(
+            env.shadow_dir,
+            shadow_id,
+            env.repos,
+            image=None,  # Keep existing image
+        )
+
+        return env
+
+    async def sync_source(
+        self,
+        shadow_id: str,
+        local_sources: list[str],
+    ) -> ShadowEnvironment:
+        """Sync local sources to an existing shadow environment.
+
+        Unlike add_source which only adds NEW sources, sync_source is idempotent:
+        - If source doesn't exist: adds it (same as add_source)
+        - If source already exists: updates it with current local HEAD
+
+        This is the recommended operation for iterative development workflows
+        where you make local commits and want them reflected in the shadow.
+
+        Args:
+            shadow_id: ID of the existing shadow environment
+            local_sources: List of "path:org/repo" strings to sync
+
+        Returns:
+            Updated ShadowEnvironment with sync results
+
+        Raises:
+            ValueError: If shadow doesn't exist or isn't running
+        """
+        # Get existing environment
+        env = self.get(shadow_id)
+        if env is None:
+            raise ValueError(f"Shadow environment not found: {shadow_id}")
+
+        # Parse source specs (using parse_local for path:org/repo format)
+        specs = [RepoSpec.parse_local(src) for src in local_sources]
+
+        # Categorize as new or existing
+        existing_repos = {(r.org, r.name): r for r in env.repos}
+        new_specs: list[RepoSpec] = []
+        update_specs: list[RepoSpec] = []
+
+        for spec in specs:
+            if (spec.org, spec.name) in existing_repos:
+                update_specs.append(spec)
+            else:
+                new_specs.append(spec)
+
+        # Create snapshots directory
+        snapshots_dir = env.shadow_dir / "snapshots"
+        snapshots_dir.mkdir(exist_ok=True)
+        snapshot_mgr = SnapshotManager(snapshots_dir)
+
+        # Process updates (existing repos)
+        for spec in update_specs:
+            if spec.local_path:
+                # Create fresh snapshot from current local HEAD
+                snapshot_result = await snapshot_mgr.create_snapshot(
+                    local_path=spec.local_path,
+                    org=spec.org,
+                    name=spec.name,
+                )
+                spec.snapshot_commit = snapshot_result.commit_sha
+
+                # Update the existing repo entry with new commit
+                existing_spec = existing_repos[(spec.org, spec.name)]
+                existing_spec.snapshot_commit = spec.snapshot_commit
+
+        # Process new sources (same as add_source)
+        for spec in new_specs:
+            if spec.local_path:
+                snapshot_result = await snapshot_mgr.create_snapshot(
+                    local_path=spec.local_path,
+                    org=spec.org,
+                    name=spec.name,
+                )
+                spec.snapshot_commit = snapshot_result.commit_sha
+
+        # Push snapshots to Gitea
+        gitea = GiteaClient(self.runtime, env.container_name)
+
+        # For UPDATED repos: just push new bundle (repo already exists in Gitea)
+        for spec in update_specs:
+            bundle_path = f"/snapshots/{spec.org}/{spec.name}.bundle"
+            await gitea.push_bundle(
+                org=spec.org,
+                name=spec.name,
+                bundle_container_path=bundle_path,
+            )
+
+        # For NEW repos: full setup (create org, create repo, push bundle)
+        for spec in new_specs:
+            bundle_path = f"/snapshots/{spec.org}/{spec.name}.bundle"
+            await gitea.setup_repo_from_bundle(
+                org=spec.org,
+                name=spec.name,
+                bundle_container_path=bundle_path,
+            )
+
+        # Add git URL rewriting for new sources only (existing already have it)
+        if new_specs:
+            await self._configure_git_rewriting(env.container_name, new_specs)
+
+        # Clear uv/pip caches so updated sources are picked up
+        await self.runtime.exec(
+            env.container_name,
+            "rm -rf ~/.cache/uv/git-v0 /tmp/uv-cache /tmp/pip-cache 2>/dev/null || true",
+        )
+
+        # Add new repos to environment
         env.repos.extend(new_specs)
 
         # Update metadata on disk

@@ -7,7 +7,8 @@ You have access to the `shadow` tool for creating OS-level isolated container en
 | Operation | Description |
 |-----------|-------------|
 | `create` | Create shadow environment with local source snapshots |
-| `add-source` | Add local sources to an existing shadow |
+| `add-source` | Add NEW local sources to an existing shadow (fails if exists) |
+| `sync-source` | Sync local sources - adds if new, updates if exists (idempotent) |
 | `exec` | Run command inside sandbox |
 | `exec_batch` | Run multiple commands efficiently |
 | `diff` | Show changed files |
@@ -44,6 +45,55 @@ Your local working directory is snapshotted **exactly as-is** with full git hist
 - Modified files have your current changes  
 - Deleted files are properly removed from the snapshot
 - **No staging required** - what you see in your directory is what appears in the shadow
+
+---
+
+## Iterative Development Workflow
+
+**IMPORTANT**: Shadow snapshots are **point-in-time**. If you make local commits after creating a shadow, those changes are NOT automatically reflected in the shadow.
+
+### The `sync-source` Operation (Recommended)
+
+Use `sync-source` to update your shadow with new local commits:
+
+```python
+# 1. Create shadow with your local repo
+shadow.create(local_sources=["~/repos/my-lib:myorg/my-lib"])
+
+# 2. Make changes locally, commit
+# (changes NOT yet in shadow)
+
+# 3. Sync the updated code into the shadow
+shadow.sync_source(shadow_id, ["~/repos/my-lib:myorg/my-lib"])
+
+# 4. Test with updated code
+shadow.exec(shadow_id, "pip install git+https://github.com/myorg/my-lib && pytest")
+```
+
+**`sync-source` is idempotent**:
+- If the repo doesn't exist in shadow → adds it (like `add-source`)
+- If the repo already exists → updates it with current local HEAD
+
+### When to Use Which Operation
+
+| Operation | Use Case |
+|-----------|----------|
+| `add-source` | Add a NEW repo to an existing shadow (fails if already exists) |
+| `sync-source` | Update existing repo OR add new repo (idempotent, safe to call repeatedly) |
+| Destroy/recreate | When you need a completely fresh environment |
+
+### Rapid Python Iteration
+
+For fastest iteration on Python code, use editable installs from the pre-cloned workspace:
+
+```python
+# Editable install means changes to /workspace/ are immediately reflected
+shadow.exec(shadow_id, "pip install -e /workspace/myorg/my-lib")
+
+# Now you can sync-source and changes are picked up without reinstall
+shadow.sync_source(shadow_id, ["~/repos/my-lib:myorg/my-lib"])
+shadow.exec(shadow_id, "pytest")  # Uses updated code immediately
+```
 
 ---
 

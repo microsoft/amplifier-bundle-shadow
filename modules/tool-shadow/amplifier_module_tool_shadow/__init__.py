@@ -67,6 +67,7 @@ class ShadowTool:
                     "enum": [
                         "create",
                         "add-source",
+                        "sync-source",
                         "exec",
                         "exec_batch",
                         "diff",
@@ -153,6 +154,7 @@ class ShadowTool:
         operations = {
             "create": self._create,
             "add-source": self._add_source,
+            "sync-source": self._sync_source,
             "exec": self._exec,
             "exec_batch": self._exec_batch,
             "diff": self._diff,
@@ -358,6 +360,56 @@ class ShadowTool:
                 ],
                 "status": env.status.value,
                 "message": f"Added {len(local_sources)} source(s) to shadow environment",
+            },
+            error=None,
+        )
+
+    async def _sync_source(self, input: dict[str, Any]) -> ToolResult:
+        """Sync local sources to an existing shadow environment.
+
+        Unlike add-source which only adds NEW sources, sync-source is idempotent:
+        - If source doesn't exist: adds it (same as add-source)
+        - If source already exists: updates it with current local HEAD
+
+        This is the recommended operation for iterative development workflows.
+        """
+        shadow_id = input.get("shadow_id")
+        local_sources = input.get("local_sources")
+
+        if not shadow_id:
+            return ToolResult(
+                success=False, output=None, error={"message": "shadow_id is required"}
+            )
+        if not local_sources:
+            return ToolResult(
+                success=False,
+                output=None,
+                error={
+                    "message": "local_sources parameter is required. Format: ['/path/to/repo:org/name', ...]"
+                },
+            )
+
+        env = await self.manager.sync_source(shadow_id, local_sources)
+
+        # Build snapshot_commits for observability
+        snapshot_commits = {
+            r.full_name: r.snapshot_commit for r in env.repos if r.snapshot_commit
+        }
+
+        return ToolResult(
+            output={
+                "shadow_id": env.shadow_id,
+                "local_sources": [
+                    {
+                        "repo": r.full_name,
+                        "local_path": str(r.local_path) if r.local_path else None,
+                        "snapshot_commit": r.snapshot_commit,
+                    }
+                    for r in env.repos
+                ],
+                "snapshot_commits": snapshot_commits,
+                "status": env.status.value,
+                "message": f"Synced {len(local_sources)} source(s) to shadow environment",
             },
             error=None,
         )
