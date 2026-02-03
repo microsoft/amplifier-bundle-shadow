@@ -221,6 +221,7 @@ class ShadowTool:
 
             if not can_create:
                 # Return preflight failure with guidance
+                # Note: error info must be in output dict for LLM to see it
                 return ToolResult(
                     success=False,
                     output={
@@ -231,14 +232,14 @@ class ShadowTool:
                             "setup_instructions"
                         ),
                         "fallback": fallback,
-                        "message": "Preflight checks failed - cannot create shadow environment",
+                        "error": {
+                            "message": "Prerequisites not met for shadow environment",
+                            "code": fallback.get("reason", "preflight_failed")
+                            if fallback
+                            else "preflight_failed",
+                        },
                     },
-                    error={
-                        "message": "Prerequisites not met for shadow environment",
-                        "code": fallback.get("reason", "preflight_failed")
-                        if fallback
-                        else "preflight_failed",
-                    },
+                    error=None,
                 )
 
         # Validate required environment variables
@@ -512,19 +513,23 @@ class ShadowTool:
 
         result = await env.exec(command, timeout=timeout)
 
-        return ToolResult(
-            success=result.exit_code == 0,
-            output={
-                "exit_code": result.exit_code,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            },
-            error=None
-            if result.exit_code == 0
-            else {
+        # Note: error info must be in output dict for LLM to see it
+        # (ToolResult.get_serialized_output ignores error field when output is set)
+        output_dict = {
+            "exit_code": result.exit_code,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+        if result.exit_code != 0:
+            output_dict["error"] = {
                 "message": f"Command failed with exit code {result.exit_code}",
                 "code": "command_failed",
-            },
+            }
+
+        return ToolResult(
+            success=result.exit_code == 0,
+            output=output_dict,
+            error=None,
         )
 
     async def _exec_batch(self, input: dict[str, Any]) -> ToolResult:
@@ -602,21 +607,24 @@ class ShadowTool:
                     failed_at = idx
                     break
 
-        return ToolResult(
-            success=overall_success,
-            output={
-                "steps": steps,
-                "success": overall_success,
-                "failed_at": failed_at,
-            },
-            error=None
-            if overall_success
-            else {
+        # Note: error info must be in output dict for LLM to see it
+        output_dict = {
+            "steps": steps,
+            "success": overall_success,
+            "failed_at": failed_at,
+        }
+        if not overall_success:
+            output_dict["error"] = {
                 "message": f"Batch execution failed at step {failed_at}"
                 if failed_at is not None
                 else "Some commands failed",
                 "code": "batch_failed",
-            },
+            }
+
+        return ToolResult(
+            success=overall_success,
+            output=output_dict,
+            error=None,
         )
 
     async def _diff(self, input: dict[str, Any]) -> ToolResult:
