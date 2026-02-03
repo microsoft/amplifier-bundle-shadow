@@ -103,7 +103,7 @@ class ShadowTool:
                 },
                 "shadow_id": {
                     "type": "string",
-                    "description": "Shadow environment ID (for exec/diff/extract/inject/status/destroy)",
+                    "description": "Shadow environment ID. Required for exec/diff/extract/inject/status/destroy. Optional for preflight (omit to run pre-create checks).",
                 },
                 "command": {
                     "type": "string",
@@ -719,22 +719,201 @@ class ShadowTool:
 
         return health
 
-    async def _preflight(self, input: dict[str, Any]) -> ToolResult:
-        """Run pre-flight checks on a shadow environment.
+    async def _preflight_pre_create(self, input: dict[str, Any]) -> ToolResult:
+        """Run pre-create preflight checks (BEFORE creating a shadow environment).
 
-        Validates that the environment is properly configured and ready for testing:
-        - Gitea server is running and accessible
-        - Local source repos are properly mirrored
-        - Required tools are installed (uv, pip, git)
-        - API keys are available
+        Checks host prerequisites:
+        - Docker/Podman binary available
+        - Docker daemon running and accessible
+        - Shadow container image available (or can be built)
+        - API keys available in host environment
+        """
+        import shutil
+        import subprocess
+
+        checks: list[dict[str, Any]] = []
+        all_passed = True
+        setup_instructions: list[str] = []
+
+        # Check 1: Container runtime binary available
+        runtime = None
+        if shutil.which("podman"):
+            runtime = "podman"
+        elif shutil.which("docker"):
+            runtime = "docker"
+
+        checks.append(
+            {
+                "name": "Container runtime binary",
+                "passed": runtime is not None,
+                "message": f"Found: {runtime}"
+                if runtime
+                else "Neither docker nor podman found in PATH",
+            }
+        )
+        if not runtime:
+            all_passed = False
+            setup_instructions.append(
+                "Install Docker: https://docs.docker.com/get-docker/ or Podman: https://podman.io/getting-started/installation"
+            )
+            # Can't continue without runtime
+            return ToolResult(
+                success=False,
+                output={
+                    "mode": "pre-create",
+                    "passed": False,
+                    "checks": checks,
+                    "setup_instructions": setup_instructions,
+                    "message": "Container runtime not installed - cannot proceed",
+                },
+                error=None,
+            )
+
+        # Check 2: Container daemon running
+        try:
+            # Use 'info' command which requires daemon to be running
+            result = subprocess.run(
+                [runtime, "info"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            daemon_running = result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            daemon_running = False
+
+        checks.append(
+            {
+                "name": "Container daemon running",
+                "passed": daemon_running,
+                "message": f"{runtime} daemon is running"
+                if daemon_running
+                else f"{runtime} daemon not running or not accessible",
+            }
+        )
+        if not daemon_running:
+            all_passed = False
+            if runtime == "docker":
+                setup_instructions.append(
+                    "Start Docker: 'open -a Docker' (macOS) or 'systemctl start docker' (Linux)"
+                )
+            else:
+                setup_instructions.append(
+                    "Start Podman: 'podman machine start' (macOS) or 'systemctl start podman' (Linux)"
+                )
+            # Can't continue without daemon
+            return ToolResult(
+                success=False,
+                output={
+                    "mode": "pre-create",
+                    "passed": False,
+                    "checks": checks,
+                    "setup_instructions": setup_instructions,
+                    "runtime": runtime,
+                    "message": f"{runtime} daemon not running - cannot proceed",
+                },
+                error=None,
+            )
+
+        # Check 3: Shadow image available
+        try:
+            result = subprocess.run(
+                [runtime, "images", "-q", DEFAULT_IMAGE],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            image_exists = bool(result.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            image_exists = False
+
+        checks.append(
+            {
+                "name": "Shadow image available",
+                "passed": image_exists,
+                "message": f"Image {DEFAULT_IMAGE} found"
+                if image_exists
+                else f"Image {DEFAULT_IMAGE} not found",
+            }
+        )
+        if not image_exists:
+            all_passed = False
+            setup_instructions.append(
+                f"Build image: 'amplifier-shadow build-image' or pull: '{runtime} pull {DEFAULT_IMAGE}'"
+            )
+
+        # Check 4: API keys available in host environment
+        api_keys_found: list[str] = []
+        api_keys_missing: list[str] = []
+        for key in DEFAULT_ENV_PATTERNS:
+            if os.environ.get(key):
+                api_keys_found.append(key)
+            else:
+                api_keys_missing.append(key)
+
+        has_api_key = len(api_keys_found) > 0
+        checks.append(
+            {
+                "name": "API keys in host environment",
+                "passed": has_api_key,
+                "message": f"Found: {', '.join(api_keys_found)}"
+                if api_keys_found
+                else "No API keys found",
+                "details": {
+                    "found": api_keys_found,
+                    "missing": api_keys_missing,
+                },
+            }
+        )
+        if not has_api_key:
+            all_passed = False
+            setup_instructions.append(
+                "Set at least one API key: export ANTHROPIC_API_KEY=... (or OPENAI_API_KEY, etc.)"
+            )
+
+        return ToolResult(
+            success=all_passed,
+            output={
+                "mode": "pre-create",
+                "passed": all_passed,
+                "checks": checks,
+                "runtime": runtime,
+                "setup_instructions": setup_instructions
+                if setup_instructions
+                else None,
+                "message": "All pre-create checks passed - ready to create shadow environment"
+                if all_passed
+                else "Some checks failed - review setup_instructions",
+            },
+            error=None,
+        )
+
+    async def _preflight(self, input: dict[str, Any]) -> ToolResult:
+        """Run pre-flight checks for shadow environments.
+
+        Two modes of operation:
+
+        1. PRE-CREATE MODE (no shadow_id): Checks prerequisites BEFORE creating an environment
+           - Docker/Podman binary available
+           - Docker daemon running and accessible
+           - Shadow container image available
+           - API keys available in host environment
+
+        2. ENVIRONMENT MODE (with shadow_id): Checks an existing environment
+           - Container running
+           - Gitea server accessible
+           - Local sources mirrored
+           - Required tools installed
+           - API keys available in container
+           - Git URL rewriting configured
         """
         shadow_id = input.get("shadow_id")
 
+        # If no shadow_id, run pre-create checks
         if not shadow_id:
-            return ToolResult(
-                success=False, output=None, error={"message": "shadow_id is required"}
-            )
+            return await self._preflight_pre_create(input)
 
+        # Otherwise, run environment checks
         env = self.manager.get(shadow_id)
         if not env:
             return ToolResult(
