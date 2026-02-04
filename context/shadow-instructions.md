@@ -2,6 +2,35 @@
 
 You have access to the `shadow` tool for creating OS-level isolated container environments for safe testing. Optionally, snapshot local git repositories to test uncommitted changes before pushing.
 
+---
+
+## ⚠️ IMPORTANT: Tool vs CLI Distinction
+
+There are TWO ways to interact with shadow environments:
+
+| Interface | When to Use | Command Format |
+|-----------|-------------|----------------|
+| **`shadow` tool** | Inside Amplifier sessions (via tool calls) | `shadow.create(...)`, `shadow.exec(...)` |
+| **`amplifier-shadow` CLI** | From terminal/shell | `amplifier-shadow create ...`, `amplifier-shadow exec ...` |
+
+**You are an agent using the `shadow` TOOL.** Use the Python API syntax shown below.
+
+### If `amplifier-shadow` CLI is Needed (Outside Sessions)
+
+If you need to instruct a user to use the CLI from their terminal:
+
+```bash
+# Install the CLI tool
+uv tool install git+https://github.com/microsoft/amplifier-bundle-shadow
+
+# Then use with hyphen (amplifier-shadow, NOT "amplifier shadow")
+amplifier-shadow create --local ~/repos/my-lib:myorg/my-lib
+amplifier-shadow exec <shadow-id> "uv tool install ..."
+amplifier-shadow destroy <shadow-id>
+```
+
+---
+
 ## Quick Reference
 
 | Operation | Description |
@@ -22,9 +51,9 @@ You have access to the `shadow` tool for creating OS-level isolated container en
 
 Shadow environments use **selective git URL rewriting**. When you create a shadow with local sources:
 
-```bash
-# Generic example
-shadow create --local ~/repos/my-library:myorg/my-library
+```python
+# Using the shadow TOOL (inside Amplifier sessions)
+shadow.create(local_sources=["~/repos/my-library:myorg/my-library"])
 ```
 
 Git is configured to rewrite only that specific repo:
