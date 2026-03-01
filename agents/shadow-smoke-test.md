@@ -30,6 +30,7 @@ meta:
     assistant: 'I'll delegate to shadow-smoke-test to verify both local sources are being used and the code works correctly.'
     <commentary>The agent verifies each local source independently and exercises touched code paths.</commentary>
     </example>
+  model_role: [critical-ops, coding, general]
 ---
 
 # Shadow Smoke Test Agent (Generic)

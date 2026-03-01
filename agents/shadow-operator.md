@@ -32,6 +32,7 @@ meta:
     user: 'I changed both the core library and the CLI - test them together'
     assistant: 'I'll use shadow-operator to create a shadow with both local repos and verify they work together.'
     </example>
+  model_role: [critical-ops, coding, general]
 ---
 
 # Shadow Operator Agent
